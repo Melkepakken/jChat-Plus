@@ -65,6 +65,7 @@ Chat = {
         ? $.QueryString.small_caps.toLowerCase() === "true"
         : false,
     emotes: {},
+    kickEmotes: {},
     badges: {},
     userBadges: {},
     ffzapBadges: null,
@@ -756,6 +757,41 @@ Chat = {
     Chat.clearMessage(messageId);
   },
 
+  parseKickEmotes: function (content) {
+    if (typeof content !== "string") return "";
+
+    return content.replace(
+      /\[emote:(\d+):([^\]]*)\]/g,
+      function (match, emoteId, emoteName) {
+        var token = "kick_emote_" + emoteId;
+
+        var displayName = emoteName || token;
+
+        if (!Chat.info.kickEmotes[emoteId]) {
+          Chat.info.kickEmotes[emoteId] = {
+            id: emoteId,
+            name: displayName,
+            token: token,
+            image:
+              "https://files.kick.com/emotes/" +
+              encodeURIComponent(emoteId) +
+              "/fullsize",
+          };
+        }
+
+        Chat.info.emotes[token] = {
+          id: emoteId,
+          image: Chat.info.kickEmotes[emoteId].image,
+          zeroWidth: false,
+          kick: true,
+          name: displayName,
+        };
+
+        return token;
+      },
+    );
+  },
+
   writeKick: function (data) {
     if (!data || !data.sender) return;
 
@@ -766,9 +802,7 @@ Chat = {
     var displayName = sender.username || nick;
     var content = data.content || "";
 
-    // Kick emotes arrive like: [emote:2506823:azzzjh]
-    // For v1, just show the emote name as text.
-    content = content.replace(/\[emote:\d+:([^\]]+)\]/g, "$1");
+    content = Chat.parseKickEmotes(content);
 
     if (Chat.info.hideCommands && /^!.+/.test(content)) return;
 
