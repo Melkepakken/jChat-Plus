@@ -74,6 +74,7 @@ Chat = {
     nicknameColor: "cN" in $.QueryString ? $.QueryString.cN : false,
     cheers: {},
     lines: [],
+    deletedMessages: {},
     blockedUsers:
       "block" in $.QueryString
         ? $.QueryString.block.toLowerCase().split(",")
@@ -443,6 +444,7 @@ Chat = {
 
   write: function (nick, info, message) {
     if (info) {
+      if (info.id && Chat.info.deletedMessages[info.id.toString()]) return;
       var $chatLine = $("<div></div>");
       $chatLine.addClass("chat_line");
       $chatLine.attr("data-nick", nick);
@@ -686,6 +688,74 @@ Chat = {
     }
   },
 
+  isKickDeleteEvent: function (eventName) {
+    if (!eventName) return false;
+
+    return (
+      /delete|deleted|remove|removed/i.test(eventName) &&
+      /message|chat/i.test(eventName)
+    );
+  },
+
+  findKickDeletedMessageId: function (data) {
+    if (!data) return null;
+
+    var candidates = [
+      data.id,
+      data.message_id,
+      data.messageId,
+      data.chat_message_id,
+      data.chatMessageId,
+      data.target_msg_id,
+      data.targetMessageId,
+      data.deletedMessage && data.deletedMessage.id,
+      data.deleted_message && data.deleted_message.id,
+      data.message && data.message.id,
+      data.chatMessage && data.chatMessage.id,
+      data.chat_message && data.chat_message.id,
+      data.target && data.target.id,
+    ];
+
+    var visibleIds = $(".chat_line")
+      .map(function () {
+        return $(this).attr("data-id");
+      })
+      .get();
+
+    for (var i = 0; i < candidates.length; i++) {
+      if (!candidates[i]) continue;
+
+      var candidate = candidates[i].toString();
+
+      if (visibleIds.includes(candidate)) {
+        return candidate;
+      }
+    }
+
+    for (var j = 0; j < candidates.length; j++) {
+      if (candidates[j]) return candidates[j].toString();
+    }
+
+    return null;
+  },
+
+  deleteKickMessage: function (data) {
+    if (!data) return;
+
+    var messageId = Chat.findKickDeletedMessageId(data);
+
+    if (!messageId) {
+      console.warn(
+        "jChat Kick: Delete event did not include a usable message id.",
+        data,
+      );
+      return;
+    }
+
+    console.log("jChat Kick: Deleting message " + messageId);
+    Chat.clearMessage(messageId);
+  },
+
   writeKick: function (data) {
     if (!data || !data.sender) return;
 
@@ -864,7 +934,7 @@ Chat = {
         return;
       }
 
-      if (packet.event !== "App\\Events\\ChatMessageEvent") return;
+      if (!packet.event || packet.event.indexOf("App\\Events\\") !== 0) return;
 
       var data;
 
@@ -874,11 +944,22 @@ Chat = {
             ? JSON.parse(packet.data)
             : packet.data;
       } catch (err) {
-        console.warn("jChat Kick: Failed to parse chat data.", err);
+        console.warn("jChat Kick: Failed to parse event data.", err, packet);
         return;
       }
 
-      Chat.writeKick(data);
+      if (packet.event === "App\\Events\\ChatMessageEvent") {
+        Chat.writeKick(data);
+        return;
+      }
+
+      if (
+        packet.event === "App\\Events\\ChatMessageDeletedEvent" ||
+        Chat.isKickDeleteEvent(packet.event)
+      ) {
+        Chat.deleteKickMessage(data);
+        return;
+      }
     };
 
     socket.onerror = function (err) {
@@ -915,9 +996,32 @@ Chat = {
   },
 
   clearMessage: function (id) {
+    if (!id) return;
+
+    id = id.toString();
+    Chat.info.deletedMessages[id] = Date.now();
+
+    // Remove from the pending line queue too, in case the line has not hit the DOM yet.
+    var escapedId = $("<div>").text(id).html();
+    Chat.info.lines = Chat.info.lines.filter(function (line) {
+      return line.indexOf('data-id="' + escapedId + '"') === -1;
+    });
+
     setTimeout(function () {
-      $(".chat_line[data-id=" + id + "]").remove();
+      $(".chat_line")
+        .filter(function () {
+          return $(this).attr("data-id") === id;
+        })
+        .remove();
     }, 200);
+
+    // Prevent the deleted-message cache from growing forever.
+    var cutoff = Date.now() - 10 * 60 * 1000;
+    Object.keys(Chat.info.deletedMessages).forEach(function (messageId) {
+      if (Chat.info.deletedMessages[messageId] < cutoff) {
+        delete Chat.info.deletedMessages[messageId];
+      }
+    });
   },
 
   connect: function (channel) {

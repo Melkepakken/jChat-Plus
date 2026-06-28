@@ -2,7 +2,8 @@
 
 **jChat+** is a modernized fork of [jChat](https://github.com/giambaJ/jChat) with Kick support, additional emoji rendering options, username color controls, and other streamer-focused improvements.
 
-### The app is currently NOT up and running on any website as it is work-in-progress. Self-hosting is possible if you setup a credentials.js file.
+### The app is currently NOT up and running on any website as it is work-in-progress. 
+## Self-hosting is possible if you setup a credentials.js file.
 
 ## Features of jChat+
 
