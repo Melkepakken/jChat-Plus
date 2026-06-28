@@ -40,6 +40,11 @@ Chat = {
       "hide_badges" in $.QueryString
         ? $.QueryString.hide_badges.toLowerCase() === "true"
         : false,
+    nicknameColor: "cN" in $.QueryString ? $.QueryString.cN : false,
+    emojiStyle:
+      "emoji" in $.QueryString && $.QueryString.emoji.toLowerCase() === "native"
+        ? "native"
+        : "twemoji",
     ffzRoomBadges:
       "ffz_room_badges" in $.QueryString
         ? $.QueryString.ffz_room_badges.toLowerCase() === "true"
@@ -60,6 +65,7 @@ Chat = {
     bttvBadges: null,
     seventvBadges: null,
     chatterinoBadges: null,
+    nicknameColor: "cN" in $.QueryString ? $.QueryString.cN : false,
     cheers: {},
     lines: [],
     blockedUsers:
@@ -509,10 +515,20 @@ Chat = {
       // Writing username
       var $username = $("<span></span>");
       $username.addClass("nick");
-      if (typeof info.color === "string") {
-        if (tinycolor(info.color).getBrightness() <= 50)
-          var color = tinycolor(info.color).lighten(30);
-        else var color = info.color;
+      var color;
+
+      if (Chat.info.nicknameColor) {
+        color = Chat.info.nicknameColor;
+
+        if (/^[0-9a-f]{3,8}$/i.test(color)) {
+          color = "#" + color;
+        }
+      } else if (typeof info.color === "string") {
+        if (tinycolor(info.color).getBrightness() <= 50) {
+          color = tinycolor(info.color).lighten(30).toString();
+        } else {
+          color = info.color;
+        }
       } else {
         const twitchColors = [
           "#FF0000",
@@ -531,8 +547,10 @@ Chat = {
           "#8A2BE2",
           "#00FF7F",
         ];
-        var color = twitchColors[nick.charCodeAt(0) % 15];
+
+        color = twitchColors[nick.charCodeAt(0) % twitchColors.length];
       }
+
       $username.css("color", color);
       $username.html(info["display-name"] ? info["display-name"] : nick);
       $userInfo.append($username);
@@ -630,7 +648,13 @@ Chat = {
         message = message.replace(regex, replacements[replacementKey]);
       });
 
-      message = twemoji.parse(message);
+      if (Chat.info.emojiStyle === "twemoji") {
+        message = twemoji.parse(message, {
+          base: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/",
+          folder: "svg",
+          ext: ".svg",
+        });
+      }
       $message.html(message);
 
       // Writing zero-width emotes
