@@ -24,6 +24,12 @@ Chat = {
         : false,
     kickPusherUrl:
       "wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false",
+    kickSocket: null,
+    kickReconnectTimer: null,
+    kickReconnectAttempts: 0,
+    kickReconnectBaseDelay: 1000,
+    kickReconnectMaxDelay: 30000,
+    kickManualClose: false,
     animate:
       "animate" in $.QueryString
         ? $.QueryString.animate.toLowerCase() === "true"
@@ -727,88 +733,179 @@ Chat = {
     Chat.write(nick, info, content);
   },
 
-  connectKick: function (chatroomId) {
+  clearKickReconnectTimer: function () {
+    if (Chat.info.kickReconnectTimer) {
+      clearTimeout(Chat.info.kickReconnectTimer);
+      Chat.info.kickReconnectTimer = null;
+    }
+  },
+
+  scheduleKickReconnect: function (chatroomId) {
+    if (Chat.info.kickManualClose) return;
+
+    Chat.clearKickReconnectTimer();
+
+    var attempt = Chat.info.kickReconnectAttempts;
+    var delay = Math.min(
+      Chat.info.kickReconnectMaxDelay,
+      Chat.info.kickReconnectBaseDelay * Math.pow(2, attempt),
+    );
+
+    // Tiny jitter so reconnects don't all spam the server.
+    delay += Math.floor(Math.random() * 1000);
+
+    Chat.info.kickReconnectAttempts += 1;
+
+    console.warn(
+      "jChat Kick: Reconnecting in " +
+        Math.round(delay / 1000) +
+        "s. Attempt " +
+        Chat.info.kickReconnectAttempts +
+        ".",
+    );
+
+    Chat.info.kickReconnectTimer = setTimeout(function () {
+      Chat.connectKick(chatroomId, true);
+    }, delay);
+  },
+
+  connectKick: function (chatroomId, isReconnect) {
     if (!chatroomId || Number.isNaN(chatroomId)) {
       console.warn("jChat Kick: Missing or invalid kick_room parameter.");
       return;
     }
 
-    console.log("jChat Kick: Connecting to chatroom " + chatroomId);
+    Chat.clearKickReconnectTimer();
 
-    var connect = function () {
-      var socket = new WebSocket(Chat.info.kickPusherUrl);
-      var subscribed = false;
-      var channelName = "chatrooms." + chatroomId + ".v2";
+    if (!isReconnect) {
+      Chat.info.kickReconnectAttempts = 0;
+    }
 
-      function subscribe() {
-        if (subscribed || socket.readyState !== WebSocket.OPEN) return;
+    Chat.info.kickManualClose = false;
 
-        socket.send(
-          JSON.stringify({
-            event: "pusher:subscribe",
-            data: {
-              auth: "",
-              channel: channelName,
-            },
-          }),
-        );
+    // Avoid duplicate Kick sockets if connectKick is called twice.
+    if (
+      Chat.info.kickSocket &&
+      (Chat.info.kickSocket.readyState === WebSocket.OPEN ||
+        Chat.info.kickSocket.readyState === WebSocket.CONNECTING)
+    ) {
+      Chat.info.kickManualClose = true;
 
-        subscribed = true;
-        console.log("jChat Kick: Subscribed to " + channelName);
+      try {
+        Chat.info.kickSocket.close();
+      } catch (err) {
+        console.warn("jChat Kick: Failed to close existing socket.", err);
       }
 
-      socket.onopen = function () {
-        console.log("jChat Kick: WebSocket open");
-      };
+      Chat.info.kickManualClose = false;
+    }
 
-      socket.onmessage = function (event) {
-        var packet;
+    console.log(
+      "jChat Kick: " +
+        (isReconnect ? "Reconnecting" : "Connecting") +
+        " to chatroom " +
+        chatroomId,
+    );
 
-        try {
-          packet = JSON.parse(event.data);
-        } catch (err) {
-          console.warn("jChat Kick: Failed to parse packet", err);
-          return;
-        }
+    var socket = new WebSocket(Chat.info.kickPusherUrl);
+    Chat.info.kickSocket = socket;
 
-        if (packet.event === "pusher:connection_established") {
-          subscribe();
-          return;
-        }
+    var subscribed = false;
+    var channelName = "chatrooms." + chatroomId + ".v2";
 
-        if (packet.event === "pusher:ping") {
-          socket.send(JSON.stringify({ event: "pusher:pong" }));
-          return;
-        }
+    function subscribe() {
+      if (subscribed || socket.readyState !== WebSocket.OPEN) return;
 
-        if (packet.event !== "App\\Events\\ChatMessageEvent") return;
+      socket.send(
+        JSON.stringify({
+          event: "pusher:subscribe",
+          data: {
+            auth: "",
+            channel: channelName,
+          },
+        }),
+      );
 
-        var data;
+      subscribed = true;
+      Chat.info.kickReconnectAttempts = 0;
 
-        try {
-          data =
-            typeof packet.data === "string"
-              ? JSON.parse(packet.data)
-              : packet.data;
-        } catch (err) {
-          console.warn("jChat Kick: Failed to parse chat data", err);
-          return;
-        }
+      console.log("jChat Kick: Subscribed to " + channelName);
+    }
 
-        Chat.writeKick(data);
-      };
-
-      socket.onerror = function (err) {
-        console.warn("jChat Kick: WebSocket error", err);
-      };
-
-      socket.onclose = function () {
-        console.warn("jChat Kick: Disconnected. Reconnecting in 2 seconds...");
-        setTimeout(connect, 2000);
-      };
+    socket.onopen = function () {
+      console.log("jChat Kick: WebSocket open");
     };
 
-    connect();
+    socket.onmessage = function (event) {
+      var packet;
+
+      try {
+        packet = JSON.parse(event.data);
+      } catch (err) {
+        console.warn("jChat Kick: Failed to parse packet.", err);
+        return;
+      }
+
+      if (packet.event === "pusher:connection_established") {
+        subscribe();
+        return;
+      }
+
+      if (packet.event === "pusher:ping") {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ event: "pusher:pong" }));
+        }
+
+        return;
+      }
+
+      if (packet.event === "pusher:error") {
+        console.warn("jChat Kick: Pusher error.", packet);
+        return;
+      }
+
+      if (packet.event !== "App\\Events\\ChatMessageEvent") return;
+
+      var data;
+
+      try {
+        data =
+          typeof packet.data === "string"
+            ? JSON.parse(packet.data)
+            : packet.data;
+      } catch (err) {
+        console.warn("jChat Kick: Failed to parse chat data.", err);
+        return;
+      }
+
+      Chat.writeKick(data);
+    };
+
+    socket.onerror = function (err) {
+      console.warn("jChat Kick: WebSocket error.", err);
+    };
+
+    socket.onclose = function (event) {
+      subscribed = false;
+
+      if (Chat.info.kickSocket === socket) {
+        Chat.info.kickSocket = null;
+      }
+
+      if (Chat.info.kickManualClose) {
+        console.log("jChat Kick: WebSocket closed manually.");
+        return;
+      }
+
+      console.warn(
+        "jChat Kick: Disconnected. Code: " +
+          event.code +
+          ", reason: " +
+          (event.reason || "none"),
+      );
+
+      Chat.scheduleKickReconnect(chatroomId);
+    };
   },
 
   clearChat: function (nick) {
