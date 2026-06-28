@@ -101,7 +101,7 @@ http://localhost:3000/v2/?channel=melkepakken&kick=true
 ### Twitch + specific Kick channel
 
 ```txt
-http://localhost:3000/v2/?channel=melkepakken&kick=iceposeidon
+http://localhost:3000/v2/?channel=melkepakken&kick=melkepakken
 ```
 
 ### Manual Kick room ID fallback
@@ -120,8 +120,8 @@ http://localhost:3000/v2/?channel=melkepakken&kick_room=3180237
 | -------------- | -------------------------- | ----------------------------------------------------- |
 | `channel`      | `channel=melkepakken`      | Twitch channel                                        |
 | `kick`         | `kick=true`                | Resolve Kick channel using the same name as `channel` |
-| `kick`         | `kick=iceposeidon`         | Resolve a specific Kick channel                       |
-| `kick_channel` | `kick_channel=iceposeidon` | Alternative Kick channel parameter                    |
+| `kick`         | `kick=velcuz`              | Resolve a specific Kick channel                       |
+| `kick_channel` | `kick_channel=velcuz`      | Alternative Kick channel parameter                    |
 | `kick_room`    | `kick_room=3180237`        | Manual Kick chatroom ID override                      |
 
 ### Appearance
