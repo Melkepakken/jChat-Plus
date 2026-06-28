@@ -19,9 +19,17 @@ Chat = {
   info: {
     channel: null,
     kickRoomId:
-      "kick_room" in $.QueryString
+      "kick_room" in $.QueryString &&
+      !Number.isNaN(parseInt($.QueryString.kick_room, 10))
         ? parseInt($.QueryString.kick_room, 10)
         : false,
+
+    kickChannel:
+      "kick" in $.QueryString
+        ? $.QueryString.kick
+        : "kick_channel" in $.QueryString
+          ? $.QueryString.kick_channel
+          : false,
     kickPusherUrl:
       "wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false",
     kickSocket: null,
@@ -1679,6 +1687,180 @@ Chat = {
     }, delay);
   },
 
+  normalizeKickChannel: function (channel) {
+    if (channel === undefined || channel === null || channel === false) {
+      return null;
+    }
+
+    var slug = String(channel).trim();
+
+    // Allow &kick=true / &kick=1 / &kick=same to mean "same as Twitch channel".
+    if (/^(true|1|yes|same|channel|twitch)$/i.test(slug)) {
+      slug = Chat.info.channel;
+    }
+
+    if (!slug) return null;
+
+    slug = slug
+      .replace(/^@+/, "")
+      .replace(/^https?:\/\/(www\.)?kick\.com\//i, "")
+      .replace(/^popout\//i, "")
+      .replace(/\/chat$/i, "")
+      .split(/[/?#]/)[0]
+      .trim()
+      .toLowerCase();
+
+    return slug || null;
+  },
+
+  findKickChatroomId: function (payload) {
+    function toId(value) {
+      var id = parseInt(value, 10);
+      return Number.isNaN(id) ? null : id;
+    }
+
+    function fromChatroomObject(obj) {
+      if (!obj || typeof obj !== "object") return null;
+
+      return (
+        toId(obj.id) || toId(obj.chatroom_id) || toId(obj.chatroomId) || null
+      );
+    }
+
+    function walk(node, depth) {
+      if (!node || depth > 7) return null;
+
+      if (Array.isArray(node)) {
+        for (var i = 0; i < node.length; i++) {
+          var arrayResult = walk(node[i], depth + 1);
+          if (arrayResult) return arrayResult;
+        }
+
+        return null;
+      }
+
+      if (typeof node !== "object") return null;
+
+      if (node.chatroom) {
+        var chatroomResult = fromChatroomObject(node.chatroom);
+        if (chatroomResult) return chatroomResult;
+      }
+
+      var directResult =
+        toId(node.chatroom_id) || toId(node.chatroomId) || null;
+
+      if (directResult) return directResult;
+
+      for (var key in node) {
+        if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+
+        var result = walk(node[key], depth + 1);
+        if (result) return result;
+      }
+
+      return null;
+    }
+
+    return walk(payload, 0);
+  },
+
+  resolveKickChatroomId: function (channel) {
+    var slug = Chat.normalizeKickChannel(channel);
+    var deferred = $.Deferred();
+
+    if (!slug) {
+      deferred.reject("Missing Kick channel slug.");
+      return deferred.promise();
+    }
+
+    var endpoints = [
+      "https://kick.com/api/v2/channels/" + encodeURIComponent(slug),
+      "https://kick.com/api/v1/channels/" + encodeURIComponent(slug),
+      "https://kick.com/api/v1/channels/" + encodeURIComponent(slug) + "/chat",
+    ];
+
+    var errors = [];
+
+    function tryEndpoint(index) {
+      if (index >= endpoints.length) {
+        deferred.reject({
+          slug: slug,
+          message: "Could not resolve Kick chatroom ID.",
+          errors: errors,
+        });
+
+        return;
+      }
+
+      var url = endpoints[index];
+
+      console.log("jChat Kick: Resolving " + slug + " via " + url);
+
+      $.ajax({
+        url: url,
+        method: "GET",
+        dataType: "json",
+        timeout: 10000,
+      })
+        .done(function (res) {
+          var chatroomId = Chat.findKickChatroomId(res);
+
+          if (chatroomId) {
+            Chat.info.kickRoomId = chatroomId;
+
+            console.log(
+              "jChat Kick: Resolved " + slug + " to chatroom " + chatroomId,
+            );
+
+            deferred.resolve(chatroomId, res);
+            return;
+          }
+
+          errors.push({
+            url: url,
+            reason: "No chatroom ID found in response.",
+            response: res,
+          });
+
+          tryEndpoint(index + 1);
+        })
+        .fail(function (xhr, status, error) {
+          errors.push({
+            url: url,
+            status: status,
+            error: error,
+            httpStatus: xhr && xhr.status,
+          });
+
+          tryEndpoint(index + 1);
+        });
+    }
+
+    tryEndpoint(0);
+
+    return deferred.promise();
+  },
+
+  connectKickChannel: function (channel) {
+    var slug = Chat.normalizeKickChannel(channel);
+
+    if (!slug) {
+      console.warn("jChat Kick: Missing Kick channel slug.");
+      return;
+    }
+
+    Chat.resolveKickChatroomId(slug)
+      .done(function (chatroomId) {
+        Chat.connectKick(chatroomId);
+      })
+      .fail(function (err) {
+        console.warn(
+          "jChat Kick: Failed to auto-resolve channel. Use kick_room as fallback.",
+          err,
+        );
+      });
+  },
+
   connectKick: function (chatroomId, isReconnect) {
     if (!chatroomId || Number.isNaN(chatroomId)) {
       console.warn("jChat Kick: Missing or invalid kick_room parameter.");
@@ -1871,6 +2053,8 @@ Chat = {
 
     if (Chat.info.kickRoomId) {
       Chat.connectKick(Chat.info.kickRoomId);
+    } else if (Chat.info.kickChannel !== false) {
+      Chat.connectKickChannel(Chat.info.kickChannel);
     }
 
     Chat.load(function () {
