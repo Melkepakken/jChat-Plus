@@ -67,6 +67,7 @@ Chat = {
     emotes: {},
     kickEmotes: {},
     badges: {},
+    kickBadges: {},
     userBadges: {},
     ffzapBadges: null,
     bttvBadges: null,
@@ -757,6 +758,129 @@ Chat = {
     Chat.clearMessage(messageId);
   },
 
+  svgToDataUri: function (svg) {
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  },
+
+  getKickBadgeType: function (badge) {
+    if (!badge) return null;
+
+    var value =
+      badge.type ||
+      badge.slug ||
+      badge.name ||
+      badge.text ||
+      badge.title ||
+      badge.label ||
+      badge.badge;
+
+    if (!value) return null;
+
+    return value.toString().toLowerCase().replace(/\s+/g, "-");
+  },
+
+  getKickBadgeImage: function (badge) {
+    if (!badge) return null;
+
+    return (
+      badge.image ||
+      badge.image_url ||
+      badge.imageUrl ||
+      badge.icon ||
+      badge.icon_url ||
+      badge.iconUrl ||
+      badge.url ||
+      badge.src ||
+      null
+    );
+  },
+
+  createKickBadgeImage: function (type) {
+    var label = "?";
+    var fill = "#53fc18";
+
+    switch (type) {
+      case "broadcaster":
+      case "creator":
+      case "host":
+        label = "★";
+        fill = "#53fc18";
+        break;
+
+      case "moderator":
+      case "mod":
+        label = "◆";
+        fill = "#00c2ff";
+        break;
+
+      case "subscriber":
+      case "sub":
+        label = "S";
+        fill = "#a970ff";
+        break;
+
+      case "verified":
+        label = "✓";
+        fill = "#00c2ff";
+        break;
+
+      case "founder":
+        label = "F";
+        fill = "#ffb800";
+        break;
+
+      case "vip":
+        label = "V";
+        fill = "#ff4fd8";
+        break;
+
+      default:
+        label = type.charAt(0).toUpperCase();
+        fill = "#53fc18";
+        break;
+    }
+
+    var svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">' +
+      '<rect width="18" height="18" rx="3" fill="' +
+      fill +
+      '"/>' +
+      '<text x="9" y="13" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#111">' +
+      label +
+      "</text>" +
+      "</svg>";
+
+    return Chat.svgToDataUri(svg);
+  },
+
+  registerKickBadges: function (badges) {
+    if (!Array.isArray(badges) || badges.length === 0) return null;
+
+    var badgeKeys = [];
+
+    badges.forEach(function (badge) {
+      var type = Chat.getKickBadgeType(badge);
+
+      if (!type) return;
+
+      var badgeKey = "kick:" + type;
+      var badgeTag = "kick/" + type;
+
+      if (!Chat.info.badges[badgeKey]) {
+        Chat.info.badges[badgeKey] =
+          Chat.getKickBadgeImage(badge) || Chat.createKickBadgeImage(type);
+      }
+
+      if (!Chat.info.kickBadges[type]) {
+        Chat.info.kickBadges[type] = badge;
+      }
+
+      badgeKeys.push(badgeTag);
+    });
+
+    return badgeKeys.length ? badgeKeys.join(",") : null;
+  },
+
   parseKickEmotes: function (content) {
     if (typeof content !== "string") return "";
 
@@ -826,7 +950,7 @@ Chat = {
 
     var info = {
       id: data.id || "kick-" + Date.now() + "-" + Math.random(),
-      badges: null,
+      badges: Chat.registerKickBadges(badges),
       color: color || undefined,
       "display-name": displayName,
       emotes: null,
