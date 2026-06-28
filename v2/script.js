@@ -63,6 +63,12 @@ Chat = {
       "ffz_room_badges" in $.QueryString
         ? $.QueryString.ffz_room_badges.toLowerCase() === "true"
         : false,
+    ffzUserBadges:
+      "ffz_user_badges" in $.QueryString
+        ? /^(1|true|yes)$/i.test($.QueryString.ffz_user_badges)
+        : false,
+
+    ffzUserBadgeCache: {},
     fade: "fade" in $.QueryString ? parseInt($.QueryString.fade) : false,
     size: "size" in $.QueryString ? parseInt($.QueryString.size) : 3,
     font: "font" in $.QueryString ? parseInt($.QueryString.font) : 0,
@@ -386,6 +392,9 @@ Chat = {
 
   loadUserBadges: function (nick, userId) {
     Chat.info.userBadges[nick] = [];
+    if (!Chat.info.ffzUserBadges) {
+      return;
+    }
     $.getJSON("https://api.frankerfacez.com/v1/user/" + nick).always(
       function (res) {
         if (res.badges) {
