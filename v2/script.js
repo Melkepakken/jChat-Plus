@@ -76,6 +76,7 @@ Chat = {
     kickEmotes: {},
     badges: {},
     kickBadges: {},
+    kickSubscriberBadges: {},
     userBadges: {},
     ffzapBadges: null,
     bttvBadges: null,
@@ -1504,6 +1505,188 @@ Chat = {
     });
   },
 
+  getKickSubscriberBadgeCount: function (badge) {
+    function toPositiveInt(value) {
+      var number = parseInt(value, 10);
+      return isNaN(number) || number <= 0 ? null : number;
+    }
+
+    if (!badge || typeof badge !== "object") return null;
+
+    return (
+      toPositiveInt(badge.count) ||
+      toPositiveInt(badge.months) ||
+      toPositiveInt(badge.month) ||
+      toPositiveInt(badge.tier) ||
+      toPositiveInt(badge.level) ||
+      toPositiveInt(badge.minimum_months) ||
+      toPositiveInt(badge.minimumMonths) ||
+      toPositiveInt(badge.min_months) ||
+      toPositiveInt(badge.minMonths) ||
+      toPositiveInt(badge.metadata && badge.metadata.count) ||
+      toPositiveInt(badge.metadata && badge.metadata.months) ||
+      toPositiveInt(badge.metadata && badge.metadata.month) ||
+      toPositiveInt(badge.metadata && badge.metadata.tier) ||
+      toPositiveInt(badge.metadata && badge.metadata.level) ||
+      null
+    );
+  },
+
+  cacheKickSubscriberBadgesFromChannel: function (payload) {
+    var found = {};
+
+    function toPositiveInt(value) {
+      var number = parseInt(value, 10);
+      return isNaN(number) || number <= 0 ? null : number;
+    }
+
+    function findSubscriberImage(node, depth) {
+      if (!node || depth > 8) return null;
+
+      if (typeof node === "string") {
+        if (
+          node.indexOf("/channel_subscriber_badges/") !== -1 ||
+          node.indexOf("channel_subscriber_badges") !== -1 ||
+          node.indexOf("subscriber_badges") !== -1
+        ) {
+          return node;
+        }
+
+        return null;
+      }
+
+      if (Array.isArray(node)) {
+        for (var i = 0; i < node.length; i++) {
+          var arrayImage = findSubscriberImage(node[i], depth + 1);
+          if (arrayImage) return arrayImage;
+        }
+
+        return null;
+      }
+
+      if (typeof node === "object") {
+        for (var key in node) {
+          if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+
+          var objectImage = findSubscriberImage(node[key], depth + 1);
+          if (objectImage) return objectImage;
+        }
+      }
+
+      return null;
+    }
+
+    function findCount(node) {
+      if (!node || typeof node !== "object") return null;
+
+      return (
+        toPositiveInt(node.count) ||
+        toPositiveInt(node.months) ||
+        toPositiveInt(node.month) ||
+        toPositiveInt(node.tier) ||
+        toPositiveInt(node.level) ||
+        toPositiveInt(node.minimum_months) ||
+        toPositiveInt(node.minimumMonths) ||
+        toPositiveInt(node.min_months) ||
+        toPositiveInt(node.minMonths) ||
+        toPositiveInt(node.months_required) ||
+        toPositiveInt(node.monthsRequired) ||
+        toPositiveInt(node.required_months) ||
+        toPositiveInt(node.requiredMonths) ||
+        toPositiveInt(node.metadata && node.metadata.count) ||
+        toPositiveInt(node.metadata && node.metadata.months) ||
+        toPositiveInt(node.metadata && node.metadata.month) ||
+        toPositiveInt(node.metadata && node.metadata.tier) ||
+        toPositiveInt(node.metadata && node.metadata.level) ||
+        null
+      );
+    }
+
+    function walk(node, depth, arrayIndex) {
+      if (!node || depth > 8) return;
+
+      if (Array.isArray(node)) {
+        for (var i = 0; i < node.length; i++) {
+          walk(node[i], depth + 1, i);
+        }
+
+        return;
+      }
+
+      if (typeof node !== "object") return;
+
+      var image = findSubscriberImage(node, 0);
+
+      if (image) {
+        var count = findCount(node);
+
+        // If Kick gives an ordered array without month metadata,
+        // use array position as a weak fallback.
+        if (!count && arrayIndex !== undefined && arrayIndex !== null) {
+          count = arrayIndex + 1;
+        }
+
+        if (count) {
+          found[count] = image;
+        } else {
+          found.default = image;
+        }
+      }
+
+      for (var key in node) {
+        if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+        walk(node[key], depth + 1, null);
+      }
+    }
+
+    walk(payload, 0, null);
+
+    Chat.info.kickSubscriberBadges = Chat.info.kickSubscriberBadges || {};
+
+    Object.keys(found).forEach(function (key) {
+      Chat.info.kickSubscriberBadges[key] = found[key];
+    });
+
+    if (Object.keys(found).length) {
+      console.log(
+        "jChat Kick: Cached subscriber badges",
+        Chat.info.kickSubscriberBadges,
+      );
+    }
+
+    return Chat.info.kickSubscriberBadges;
+  },
+
+  getKickSubscriberBadgeImage: function (badge) {
+    var badges = Chat.info.kickSubscriberBadges || {};
+    var count = Chat.getKickSubscriberBadgeCount(badge);
+
+    if (count && badges[count]) {
+      return badges[count];
+    }
+
+    if (count) {
+      var bestKey = null;
+
+      Object.keys(badges).forEach(function (key) {
+        var number = parseInt(key, 10);
+
+        if (isNaN(number)) return;
+        if (number > count) return;
+
+        if (bestKey === null || number > bestKey) {
+          bestKey = number;
+        }
+      });
+
+      if (bestKey !== null && badges[bestKey]) {
+        return badges[bestKey];
+      }
+    }
+
+    return badges.default || null;
+  },
+
   registerKickBadges: function (badges) {
     if (!Array.isArray(badges) || badges.length === 0) return null;
 
@@ -1532,6 +1715,11 @@ Chat = {
       if (!type) return;
 
       var image = Chat.getKickBadgeImage(badge);
+
+      if (!image && type === "subscriber") {
+        image = Chat.getKickSubscriberBadgeImage(badge);
+      }
+
       var label = Chat.getKickBadgeLabel(type, badge);
 
       var html = image
@@ -1555,39 +1743,31 @@ Chat = {
     return badgeKeys.length ? badgeKeys.join(",") : null;
   },
 
-  parseKickEmotes: function (content) {
-    if (typeof content !== "string") return "";
+  parseKickEmotes: function (message) {
+    if (message === undefined || message === null) {
+      return "";
+    }
 
-    return content.replace(
-      /\[emote:(\d+):([^\]]*)\]/g,
-      function (match, emoteId, emoteName) {
-        var token = "kick_emote_" + emoteId;
+    message = String(message);
 
-        var displayName = emoteName || token;
-
-        if (!Chat.info.kickEmotes[emoteId]) {
-          Chat.info.kickEmotes[emoteId] = {
-            id: emoteId,
-            name: displayName,
-            token: token,
-            image:
-              "https://files.kick.com/emotes/" +
-              encodeURIComponent(emoteId) +
-              "/fullsize",
-          };
-        }
+    message = message.replace(
+      /\[emote:(\d+):([^\]]+)\]/g,
+      function (match, id, name) {
+        var token = "kick_emote_" + id;
 
         Chat.info.emotes[token] = {
-          id: emoteId,
-          image: Chat.info.kickEmotes[emoteId].image,
+          image: "https://files.kick.com/emotes/" + id + "/fullsize",
           zeroWidth: false,
-          kick: true,
-          name: displayName,
         };
 
-        return token;
+        // Important: add spaces around the internal token.
+        // Without this, repeated Kick emotes become:
+        // kick_emote_1kick_emote_1kick_emote_1
+        return " " + token + " ";
       },
     );
+
+    return message.replace(/[ \t]{2,}/g, " ").trim();
   },
 
   writeKick: function (data) {
@@ -1807,6 +1987,7 @@ Chat = {
 
           if (chatroomId) {
             Chat.info.kickRoomId = chatroomId;
+            Chat.cacheKickSubscriberBadgesFromChannel(res);
 
             console.log(
               "jChat Kick: Resolved " + slug + " to chatroom " + chatroomId,
