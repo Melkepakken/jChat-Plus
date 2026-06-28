@@ -1770,7 +1770,57 @@ Chat = {
     return message.replace(/[ \t]{2,}/g, " ").trim();
   },
 
+  isReloadChatCommand: function (message) {
+    return (
+      String(message || "")
+        .trim()
+        .toLowerCase() === "!reloadchat"
+    );
+  },
+
+  isKickReloadAllowed: function (data) {
+    var sender = data && data.sender ? data.sender : {};
+    var identity = sender.identity || {};
+    var badges = [];
+
+    if (Array.isArray(identity.badges)) {
+      badges = badges.concat(identity.badges);
+    }
+
+    if (Array.isArray(identity.badges_v2)) {
+      badges = badges.concat(identity.badges_v2);
+    }
+
+    if (Array.isArray(identity.badgesV2)) {
+      badges = badges.concat(identity.badgesV2);
+    }
+
+    return badges.some(function (badge) {
+      var type = Chat.getKickBadgeType(badge);
+
+      return type === "broadcaster" || type === "moderator";
+    });
+  },
+
   writeKick: function (data) {
+    var rawKickMessage = data && data.content ? String(data.content) : "";
+
+    if (Chat.isReloadChatCommand(rawKickMessage)) {
+      if (Chat.isKickReloadAllowed(data)) {
+        console.log(
+          "jChat Kick: !reloadchat accepted from",
+          data.sender && data.sender.username,
+        );
+        window.location.reload();
+        return;
+      }
+
+      console.log(
+        "jChat Kick: !reloadchat ignored from non-mod/non-broadcaster",
+        data.sender && data.sender.username,
+      );
+      return;
+    }
     if (!data || !data.sender) return;
 
     var sender = data.sender;
