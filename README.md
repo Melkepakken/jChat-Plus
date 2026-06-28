@@ -1,4 +1,4 @@
-# [![](https://www.giambaj.it/twitch/jchat/img/peepoHappysmall.png)](#) jChat+ [![GitHub version](https://img.shields.io/badge/release-v1.0.0-blue)](#) [![Website giambaj.it](https://img.shields.io/website-up-down-green-red/https/giambaj.it.svg)](https://www.chat.melkepakken.tv/) [![GitHub license](https://img.shields.io/github/license/giambaJ/jChat)](https://github.com/giambaJ/jChat/blob/main/LICENSE)
+# [![](https://www.giambaj.it/twitch/jchat/img/peepoHappysmall.png)](#) jChat+ [![GitHub version](https://img.shields.io/badge/release-v1.0.0-blue)](#) [![Website giambaj.it](https://img.shields.io/website-up-down-green-red/https/giambaj.it.svg)](https://chat.melkepakken.tv/) [![GitHub license](https://img.shields.io/github/license/giambaJ/jChat)](https://github.com/giambaJ/jChat/blob/main/LICENSE)
 
 **jChat+** is a modernized fork of [jChat](https://github.com/giambaJ/jChat) with Kick support, updated Twitch integrations, additional emoji rendering options, username color controls, and streamer-focused improvements.
 
