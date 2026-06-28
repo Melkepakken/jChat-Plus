@@ -19,6 +19,8 @@
 Chat = {
     info: {
         channel: null,
+        kickRoomId: ('kick_room' in $.QueryString ? parseInt($.QueryString.kick_room, 10) : false),
+        kickPusherUrl: 'wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false',
         animate: ('animate' in $.QueryString ? ($.QueryString.animate.toLowerCase() === 'true') : false),
         showBots: ('bots' in $.QueryString ? ($.QueryString.bots.toLowerCase() === 'true') : false),
         hideCommands: ('hide_commands' in $.QueryString ? ($.QueryString.hide_commands.toLowerCase() === 'true') : false),
@@ -456,6 +458,128 @@ Chat = {
         }
     },
 
+    writeKick: function(data) {
+        if (!data || !data.sender) return;
+
+        var sender = data.sender;
+        var identity = sender.identity || {};
+
+        var nick = (sender.slug || sender.username || 'kick-user').toLowerCase();
+        var displayName = sender.username || nick;
+        var content = data.content || '';
+
+        // Kick emotes arrive like: [emote:2506823:azzzjh]
+        // For v1, just show the emote name as text.
+        content = content.replace(/\[emote:\d+:([^\]]+)\]/g, '$1');
+
+        if (Chat.info.hideCommands && /^!.+/.test(content)) return;
+
+        if (!Chat.info.showBots && Chat.info.bots.includes(nick)) return;
+
+        if (Chat.info.blockedUsers && Chat.info.blockedUsers.includes(nick)) return;
+
+        var badges = Array.isArray(identity.badges) ? identity.badges : [];
+        var isMod = badges.some(function(badge) {
+            return badge.type === 'moderator';
+        });
+
+        var color = identity.color;
+        if (typeof(color) === 'string' && color.length > 0 && color.charAt(0) !== '#') {
+            color = '#' + color;
+        }
+
+        var info = {
+            id: data.id || ('kick-' + Date.now() + '-' + Math.random()),
+            badges: null,
+            color: color || undefined,
+            'display-name': displayName,
+            emotes: null,
+            mod: isMod ? '1' : '0',
+            bits: '0'
+        };
+
+        Chat.write(nick, info, content);
+    },
+
+    connectKick: function(chatroomId) {
+        if (!chatroomId || Number.isNaN(chatroomId)) {
+            console.warn('jChat Kick: Missing or invalid kick_room parameter.');
+            return;
+        }
+
+        console.log('jChat Kick: Connecting to chatroom ' + chatroomId);
+
+        var connect = function() {
+            var socket = new WebSocket(Chat.info.kickPusherUrl);
+            var subscribed = false;
+            var channelName = 'chatrooms.' + chatroomId + '.v2';
+
+            function subscribe() {
+                if (subscribed || socket.readyState !== WebSocket.OPEN) return;
+
+                socket.send(JSON.stringify({
+                    event: 'pusher:subscribe',
+                    data: {
+                        auth: '',
+                        channel: channelName
+                    }
+                }));
+
+                subscribed = true;
+                console.log('jChat Kick: Subscribed to ' + channelName);
+            }
+
+            socket.onopen = function() {
+                console.log('jChat Kick: WebSocket open');
+            };
+
+            socket.onmessage = function(event) {
+                var packet;
+
+                try {
+                    packet = JSON.parse(event.data);
+                } catch (err) {
+                    console.warn('jChat Kick: Failed to parse packet', err);
+                    return;
+                }
+
+                if (packet.event === 'pusher:connection_established') {
+                    subscribe();
+                    return;
+                }
+
+                if (packet.event === 'pusher:ping') {
+                    socket.send(JSON.stringify({ event: 'pusher:pong' }));
+                    return;
+                }
+
+                if (packet.event !== 'App\\Events\\ChatMessageEvent') return;
+
+                var data;
+
+                try {
+                    data = typeof packet.data === 'string' ? JSON.parse(packet.data) : packet.data;
+                } catch (err) {
+                    console.warn('jChat Kick: Failed to parse chat data', err);
+                    return;
+                }
+
+                Chat.writeKick(data);
+            };
+
+            socket.onerror = function(err) {
+                console.warn('jChat Kick: WebSocket error', err);
+            };
+
+            socket.onclose = function() {
+                console.warn('jChat Kick: Disconnected. Reconnecting in 2 seconds...');
+                setTimeout(connect, 2000);
+            };
+        };
+
+        connect();
+    },
+
     clearChat: function(nick) {
         setTimeout(function() {
             $('.chat_line[data-nick=' + nick + ']').remove();
@@ -474,6 +598,10 @@ Chat = {
         $(document).prop('title', title + Chat.info.channel);
 
         Chat.load(function() {
+            if (Chat.info.kickRoomId) {
+                Chat.connectKick(Chat.info.kickRoomId);
+            }
+
             console.log('jChat: Connecting to IRC server...');
             var socket = new ReconnectingWebSocket('wss://irc-ws.chat.twitch.tv', 'irc', { reconnectInterval: 2000 });
 
