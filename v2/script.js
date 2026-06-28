@@ -98,6 +98,26 @@ Chat = {
     bots: ["streamelements", "streamlabs", "nightbot", "moobot", "fossabot"],
   },
 
+  twitchApi: function (path, data) {
+    var hasLocalTwitchCredentials =
+      typeof TwitchAPI === "function" &&
+      typeof client_id !== "undefined" &&
+      typeof oauth_token !== "undefined";
+
+    if (hasLocalTwitchCredentials) {
+      var query = data ? "?" + $.param(data) : "";
+      return TwitchAPI("https://api.twitch.tv/helix" + path + query);
+    }
+
+    var apiBase = Chat.info.twitchApiBase || "/api/twitch";
+
+    return $.ajax({
+      url: apiBase + path,
+      data: data || {},
+      dataType: "json",
+    });
+  },
+
   loadEmotes: function (channelID) {
     Chat.info.emotes = {};
     // Load BTTV, FFZ and 7TV emotes
@@ -192,10 +212,9 @@ Chat = {
   },
 
   load: function (callback) {
-    TwitchAPI(
-      "https://api.twitch.tv/helix/users?login=" +
-        encodeURIComponent(Chat.info.channel),
-    ).done(function (res) {
+    Chat.twitchApi("/users", {
+      login: Chat.info.channel,
+    }).done(function (res) {
       if (!res.data || !res.data[0]) {
         console.warn(
           "jChat: Twitch user not found for channel " + Chat.info.channel,
@@ -226,10 +245,21 @@ Chat = {
       }
 
       // Load badges
-      TwitchAPI("https://api.twitch.tv/helix/chat/badges/global").done(
-        function (global) {
-          if (global.data) {
-            global.data.forEach((badgeSet) => {
+      Chat.twitchApi("/chat/badges/global").done(function (global) {
+        if (global.data) {
+          global.data.forEach((badgeSet) => {
+            badgeSet.versions.forEach((version) => {
+              Chat.info.badges[badgeSet.set_id + ":" + version.id] =
+                version.image_url_4x;
+            });
+          });
+        }
+
+        Chat.twitchApi("/chat/badges", {
+          broadcaster_id: Chat.info.channelID,
+        }).done(function (channel) {
+          if (channel.data) {
+            channel.data.forEach((badgeSet) => {
               badgeSet.versions.forEach((version) => {
                 Chat.info.badges[badgeSet.set_id + ":" + version.id] =
                   version.image_url_4x;
@@ -237,52 +267,38 @@ Chat = {
             });
           }
 
-          TwitchAPI(
-            "https://api.twitch.tv/helix/chat/badges?broadcaster_id=" +
-              encodeURIComponent(Chat.info.channelID),
-          ).done(function (channel) {
-            if (channel.data) {
-              channel.data.forEach((badgeSet) => {
-                badgeSet.versions.forEach((version) => {
-                  Chat.info.badges[badgeSet.set_id + ":" + version.id] =
-                    version.image_url_4x;
-                });
+          if (Chat.info.ffzRoomBadges) {
+            $.getJSON(
+              "https://api.frankerfacez.com/v1/_room/id/" +
+                encodeURIComponent(Chat.info.channelID),
+            )
+              .done(function (res) {
+                if (!res || !res.room) return;
+
+                if (res.room.moderator_badge) {
+                  Chat.info.badges["moderator:1"] =
+                    "https://cdn.frankerfacez.com/room-badge/mod/" +
+                    Chat.info.channel +
+                    "/4/rounded";
+                }
+
+                if (res.room.vip_badge) {
+                  Chat.info.badges["vip:1"] =
+                    "https://cdn.frankerfacez.com/room-badge/vip/" +
+                    Chat.info.channel +
+                    "/4";
+                }
+              })
+              .fail(function () {
+                console.warn(
+                  "jChat: No FFZ room badges found for channel " +
+                    Chat.info.channel +
+                    ". This is fine.",
+                );
               });
-            }
-
-            if (Chat.info.ffzRoomBadges) {
-              $.getJSON(
-                "https://api.frankerfacez.com/v1/_room/id/" +
-                  encodeURIComponent(Chat.info.channelID),
-              )
-                .done(function (res) {
-                  if (!res || !res.room) return;
-
-                  if (res.room.moderator_badge) {
-                    Chat.info.badges["moderator:1"] =
-                      "https://cdn.frankerfacez.com/room-badge/mod/" +
-                      Chat.info.channel +
-                      "/4/rounded";
-                  }
-
-                  if (res.room.vip_badge) {
-                    Chat.info.badges["vip:1"] =
-                      "https://cdn.frankerfacez.com/room-badge/vip/" +
-                      Chat.info.channel +
-                      "/4";
-                  }
-                })
-                .fail(function () {
-                  console.warn(
-                    "jChat: No FFZ room badges found for channel " +
-                      Chat.info.channel +
-                      ". This is fine.",
-                  );
-                });
-            }
-          });
-        },
-      );
+          }
+        });
+      });
 
       // Load users badges
       if (!Chat.info.hideBadges) {
@@ -313,10 +329,9 @@ Chat = {
       }
 
       // Load cheers images
-      TwitchAPI(
-        "https://api.twitch.tv/helix/bits/cheermotes?broadcaster_id=" +
-          encodeURIComponent(Chat.info.channelID),
-      )
+      Chat.twitchApi("/bits/cheermotes", {
+        broadcaster_id: Chat.info.channelID,
+      })
         .done(function (res) {
           if (!res.data) {
             console.warn("jChat: No cheermote data returned.");

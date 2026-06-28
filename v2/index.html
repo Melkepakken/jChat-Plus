@@ -16,7 +16,15 @@
     <script src="reconnecting-websocket.min.js"></script>
     <script src="twemoji.min.js"></script>
     <script src="tinycolor.js"></script>
-    <script src="credentials.js"></script>
+    <script>
+      if (
+        location.hostname === "localhost" ||
+        location.hostname === "127.0.0.1" ||
+        location.hostname === ""
+      ) {
+        document.write('<script src="credentials.js"><\/script>');
+      }
+    </script>
     <script src="../settings.js"></script>
     <script src="utils.js"></script>
     <script src="script.js"></script>
