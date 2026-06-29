@@ -8,51 +8,9 @@
       href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100;300;400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Baloo+Tammudu+2:wght@400;500;600;700;800&family=Comfortaa:wght@300;400;500;600;700&family=Dancing+Script:wght@400;500;600;700&family=Indie+Flower&family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&family=Noto+Sans+JP:wght@100;300;400;500;700;900&family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Source+Code+Pro:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,900;1,200;1,300;1,400;1,500;1,600;1,700;1,900&family=Press+Start+2P&family=Wallpoet&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="styles/style.css" />
-    <link rel="stylesheet" class="preview_size" href="styles/size_large.css" />
-    <link
-      rel="stylesheet"
-      class="preview_font"
-      href="styles/font_BalooTammudu.css"
-    />
-    <style>
-      #example {
-        text-align: left;
-        overflow-wrap: break-word;
-      }
 
-      #example .chat_line {
-        display: block;
-        clear: both;
-        line-height: 1.25;
-        margin: 0.25em 0;
-      }
-
-      #example .user_info {
-        white-space: nowrap;
-      }
-
-      #example .preview-source {
-        opacity: 0.8;
-        font-size: 0.75em;
-        margin-right: 0.35em;
-        text-shadow: none !important;
-      }
-
-      #example img.emoji {
-        height: 1em;
-        width: 1em;
-        margin: 0 0.05em;
-        vertical-align: -0.1em;
-      }
-    </style>
     <script src="jquery.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js"></script>
-    <script src="settings.js" defer></script>
     <script src="utils.js" defer></script>
     <script src="script.js" defer></script>
   </head>
@@ -66,236 +24,283 @@
       </div>
     </header>
 
-    <section>
-      <p>
-        <em>jChat+</em> is a Twitch and Kick chat overlay for OBS, XSplit, Meld,
-        Streamlabs Desktop and any other streaming software that supports
-        browser sources. It supports
-        <a href="https://betterttv.com/" target="_blank">BetterTTV</a>,
-        <a href="https://www.frankerfacez.com/" target="_blank">FrankerFaceZ</a>
-        and <a href="https://7tv.app/" target="_blank">7TV</a> emotes, Twitch
-        badges, Kick badges, Kick emotes, smooth message animation, message
-        fading, custom fonts, shadows, strokes and more.
-      </p>
+    <main>
+      <section id="intro">
+        <p>
+          <em>jChat+</em> is a Twitch and Kick chat overlay for OBS, XSplit,
+          Meld, Streamlabs Desktop and any other streaming software that
+          supports browser sources. It supports
+          <a href="https://betterttv.com/" target="_blank">BetterTTV</a>,
+          <a href="https://www.frankerfacez.com/" target="_blank"
+            >FrankerFaceZ</a
+          >
+          and <a href="https://7tv.app/" target="_blank">7TV</a> emotes, Twitch
+          badges, Kick badges, Kick emotes, smooth message animation, message
+          fading, custom fonts, shadows, strokes and more.
+        </p>
 
-      <p>
-        Use this setup page to generate a browser source URL. Enable Kick if you
-        want Twitch and Kick chat in the same overlay.
-      </p>
+        <p>
+          Use this setup page to generate a browser source URL. Enable Kick if
+          you want Twitch and Kick chat in the same overlay.
+        </p>
+      </section>
 
       <form name="generator">
-        <div class="form_row center">
-          <input
-            type="text"
-            name="channel"
-            required
-            placeholder="Twitch channel"
-          />
-        </div>
-
-        <div class="form_table">
-          <div class="form_col">
-            <div class="form_row left">
-              <select name="size">
-                <option value="1">Small</option>
-                <option value="2">Medium</option>
-                <option value="3" selected>Large</option>
-              </select>
-              <label for="size">Size</label>
+        <div class="setup_layout">
+          <div class="settings_panel">
+            <div class="settings_header">
+              <h3>Settings</h3>
+              <span>Build your overlay URL</span>
             </div>
 
-            <div class="form_row left">
-              <select name="font">
-                <option value="0" selected>Baloo Tammudu</option>
-                <option value="1">Segoe UI</option>
-                <option value="2">Roboto</option>
-                <option value="3">Lato</option>
-                <option value="4">Noto Sans</option>
-                <option value="5">Source Code Pro</option>
-                <option value="6">Impact</option>
-                <option value="7">Comfortaa</option>
-                <option value="8">Dancing Script</option>
-                <option value="9">Indie Flower</option>
-                <option value="10">Press Start 2P</option>
-                <option value="11">Wallpoet</option>
-              </select>
-              <label for="font">Font</label>
-            </div>
-
-            <div class="form_row left">
-              <select name="emoji">
-                <option value="">Default</option>
-                <option value="twemoji">Twemoji</option>
-                <option value="native">Native</option>
-              </select>
-              <label for="emoji">Emoji</label>
-            </div>
-
-            <br />
-
-            <div class="form_row left">
-              <input type="checkbox" name="bots" />
-              <label for="bots">Show bots</label>
-            </div>
-
-            <div class="form_row left">
-              <input type="checkbox" name="commands" />
-              <label for="commands">Hide commands</label>
-            </div>
-
-            <div class="form_row left">
-              <input type="checkbox" name="badges" />
-              <label for="badges">Hide special badges</label>
-            </div>
-
-            <div class="form_row left">
-              <input type="checkbox" name="all_badges" />
-              <label for="all_badges">Hide all badges</label>
-            </div>
-
-            <br />
-
-            <div class="form_row left">
-              <input type="checkbox" name="kick_enabled" />
-              <label for="kick_enabled">Enable Kick</label>
-            </div>
-
-            <div id="kick_channel_row" class="form_row left hidden">
+            <div class="form_row full">
               <input
                 type="text"
-                name="kick_channel"
-                placeholder="Kick channel"
+                name="channel"
+                required
+                placeholder="Twitch channel"
               />
             </div>
+
+            <div class="settings_group">
+              <h4>Kick</h4>
+
+              <div class="form_row toggle_row">
+                <label for="kick_enabled">Enable Kick</label>
+                <input type="checkbox" name="kick_enabled" checked />
+              </div>
+
+              <div id="kick_channel_row" class="kick_channel_block hidden">
+                <label for="kick_channel">Kick channel</label>
+
+                <div class="kick_channel_control">
+                  <input
+                    type="text"
+                    name="kick_channel"
+                    placeholder="Kick channel"
+                  />
+                  <span class="help_text"
+                    >Blank = same as Twitch channel</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <div class="settings_group">
+              <h4>Look</h4>
+
+              <div class="form_row">
+                <label for="size">Size</label>
+                <select name="size">
+                  <option value="1">Small</option>
+                  <option value="2" selected>Medium</option>
+                  <option value="3">Large</option>
+                </select>
+              </div>
+
+              <div class="form_row">
+                <label for="font">Font</label>
+                <select name="font">
+                  <option value="0" selected>Baloo Tammudu</option>
+                  <option value="1">Segoe UI</option>
+                  <option value="2">Roboto</option>
+                  <option value="3">Lato</option>
+                  <option value="4">Noto Sans</option>
+                  <option value="5">Source Code Pro</option>
+                  <option value="6">Impact</option>
+                  <option value="7">Comfortaa</option>
+                  <option value="8">Dancing Script</option>
+                  <option value="9">Indie Flower</option>
+                  <option value="10">Press Start 2P</option>
+                  <option value="11">Wallpoet</option>
+                </select>
+              </div>
+
+              <div class="form_row">
+                <label for="emoji">Emoji</label>
+                <select name="emoji">
+                  <option value="">Default</option>
+                  <option value="twemoji">Twemoji</option>
+                  <option value="native">Native</option>
+                </select>
+              </div>
+
+              <div class="form_row">
+                <label for="stroke">Stroke</label>
+                <select name="stroke">
+                  <option value="0" selected>Off</option>
+                  <option value="1">Thin</option>
+                  <option value="2">Medium</option>
+                  <option value="3">Thick</option>
+                  <option value="4">Thicker</option>
+                </select>
+              </div>
+
+              <div class="form_row">
+                <label for="shadow">Shadow</label>
+                <select name="shadow">
+                  <option value="0" selected>Off</option>
+                  <option value="1">Small</option>
+                  <option value="2">Medium</option>
+                  <option value="3">Large</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="settings_group">
+              <h4>Behavior</h4>
+
+              <div class="form_row toggle_row">
+                <label for="bots">Show bots</label>
+                <input type="checkbox" name="bots" checked />
+              </div>
+
+              <div class="form_row toggle_row">
+                <label for="commands">Hide commands</label>
+                <input type="checkbox" name="commands" />
+              </div>
+
+              <div class="form_row toggle_row">
+                <label for="badges">Hide special badges</label>
+                <input type="checkbox" name="badges" />
+              </div>
+
+              <div class="form_row toggle_row">
+                <label for="all_badges">Hide all badges</label>
+                <input type="checkbox" name="all_badges" />
+              </div>
+
+              <div class="form_row toggle_row">
+                <label for="animate">Animate</label>
+                <input type="checkbox" name="animate" checked />
+              </div>
+
+              <div class="form_row toggle_row fade_row">
+                <label for="fade">Fade</label>
+                <div class="inline_controls">
+                  <input
+                    type="text"
+                    name="fade"
+                    value="30"
+                    class="short hidden"
+                  />
+                  <span id="fade_seconds" class="hidden">sec</span>
+                  <input type="checkbox" name="fade_bool" />
+                </div>
+              </div>
+
+              <div class="form_row toggle_row">
+                <label for="small_caps">Caps</label>
+                <input type="checkbox" name="small_caps" />
+              </div>
+            </div>
+
+            <div class="settings_group">
+              <h4>Advanced</h4>
+
+              <div class="form_row toggle_row">
+                <label for="force_color_bool">Force name color</label>
+                <input type="checkbox" name="force_color_bool" />
+              </div>
+
+              <div id="force_color_row" class="form_row hidden">
+                <label for="force_color">Name color</label>
+                <input type="color" name="force_color" value="#ffcc00" />
+              </div>
+
+              <div class="form_row toggle_row">
+                <label for="advanced_enabled">Show advanced</label>
+                <input type="checkbox" name="advanced_enabled" />
+              </div>
+
+              <div id="advanced_block_row" class="form_row hidden">
+                <label for="block">Block users</label>
+                <input type="text" name="block" placeholder="user1,user2" />
+              </div>
+
+              <div
+                id="advanced_ffz_room_row"
+                class="form_row toggle_row hidden"
+              >
+                <label for="ffz_room_badges">FFZ room badges</label>
+                <input type="checkbox" name="ffz_room_badges" />
+              </div>
+
+              <div
+                id="advanced_ffz_user_row"
+                class="form_row toggle_row hidden"
+              >
+                <label for="ffz_user_badges">FFZ user badges</label>
+                <input type="checkbox" name="ffz_user_badges" />
+              </div>
+            </div>
+
+            <div class="generate_panel">
+              <input type="submit" value="Generate URL" />
+
+              <div id="result" class="hidden">
+                <div id="alert">Copied to clipboard</div>
+                <input type="text" id="url" readonly />
+                <p id="url_status">Click the URL to copy it.</p>
+                <input type="button" id="reset" value="Reset" />
+              </div>
+            </div>
           </div>
 
-          <div class="form_col">
-            <div class="form_row right">
-              <label for="stroke">Stroke</label>
-              <select name="stroke">
-                <option value="0" selected>Off</option>
-                <option value="1">Thin</option>
-                <option value="2">Medium</option>
-                <option value="3">Thick</option>
-                <option value="4">Thicker</option>
-              </select>
+          <div class="preview_panel">
+            <div class="preview_header">
+              <div class="preview_title">
+                <img id="brightness" src="img/light.png" />
+                <div>
+                  <h3>Live Preview</h3>
+                  <span>Rendered by the real /v2 overlay</span>
+                </div>
+              </div>
             </div>
 
-            <div class="form_row right">
-              <label for="shadow">Shadow</label>
-              <select name="shadow">
-                <option value="0" selected>Off</option>
-                <option value="1">Small</option>
-                <option value="2">Medium</option>
-                <option value="3">Large</option>
-              </select>
-            </div>
-
-            <br />
-
-            <div class="form_row right">
-              <label for="animate">Animate</label>
-              <input type="checkbox" name="animate" />
-            </div>
-
-            <div class="form_row right">
-              <label for="fade">Fade</label>
-              <input
-                type="text"
-                name="fade"
-                value="30"
-                class="short hidden"
-              /><span id="fade_seconds" class="hidden">sec</span>
-              <input type="checkbox" name="fade_bool" />
-            </div>
-
-            <div class="form_row right">
-              <label for="small_caps">Caps</label>
-              <input type="checkbox" name="small_caps" />
-            </div>
-
-            <br />
-
-            <div class="form_row right">
-              <label for="force_color_bool">Force color</label>
-              <input type="checkbox" name="force_color_bool" />
-            </div>
-
-            <div id="force_color_row" class="form_row right hidden">
-              <label for="force_color">Name color</label>
-              <input type="color" name="force_color" value="#ffcc00" />
-            </div>
-
-            <br />
-
-            <div class="form_row right">
-              <label for="advanced_enabled">Advanced</label>
-              <input type="checkbox" name="advanced_enabled" />
-            </div>
-
-            <div id="advanced_block_row" class="form_row right hidden">
-              <input type="text" name="block" placeholder="Block users" />
-            </div>
-
-            <div id="advanced_ffz_room_row" class="form_row right hidden">
-              <label for="ffz_room_badges">FFZ room badges</label>
-              <input type="checkbox" name="ffz_room_badges" />
-            </div>
-
-            <div id="advanced_ffz_user_row" class="form_row right hidden">
-              <label for="ffz_user_badges">FFZ user badges</label>
-              <input type="checkbox" name="ffz_user_badges" />
+            <div id="preview_container">
+              <iframe
+                id="overlay_preview"
+                title="jChat+ overlay preview"
+                src="v2/?preview=true&channel=Melkepakken&size=2&kick=true"
+                loading="eager"
+              ></iframe>
             </div>
           </div>
         </div>
-
-        <div id="submit_container">
-          <div class="preview">
-            <img id="brightness" src="img/light.png" /> <label>Preview:</label>
-          </div>
-
-          <div id="example"></div>
-
-          <input type="submit" value="Generate" />
-        </div>
       </form>
 
-      <div id="result" class="hidden">
-        <div id="alert">Copied to clipboard</div>
-        <input type="text" id="url" readonly />
-        <p>
-          Configure a new browser source on your streaming software with the
-          given URL.
-        </p>
-        <input type="button" id="reset" value="Reset" />
-      </div>
-    </section>
-
-    <section id="donation">
-      <span
-        >jChat+ is free and open source.<br />If it helps your stream, feel free
-        to support development through Kvalvik Studios
-        <img class="emote" src="img/Flowee.png"
-      /></span>
-      <form action="https://www.paypal.com/donate" method="post" target="_top">
-        <input type="hidden" name="hosted_button_id" value="268DLMTLTK4NU" />
-        <input
-          id="paypal"
-          type="submit"
-          title="PayPal - The safer, easier way to pay online!"
-          alt="Donate with PayPal button"
-          value="Donate"
-        />
-      </form>
-    </section>
+      <section id="donation">
+        <span>
+          jChat+ is free and open source.<br />
+          If it helps your stream, feel free to support development through
+          Kvalvik Studios
+          <img class="emote" src="img/Flowee.png" />
+        </span>
+        <form
+          action="https://www.paypal.com/donate"
+          method="post"
+          target="_top"
+        >
+          <input type="hidden" name="hosted_button_id" value="268DLMTLTK4NU" />
+          <input
+            id="paypal"
+            type="submit"
+            title="PayPal - The safer, easier way to pay online!"
+            alt="Donate with PayPal button"
+            value="Donate"
+          />
+        </form>
+      </section>
+    </main>
 
     <footer>
       <p>
         Made with &#10084; by
         <a href="mailto:support@melkepakken.tv">Melkepakken</a>
-        <a href="https://github.com/melkepakken/jchat-plus" target="_blank"
-          ><img class="github" src="img/github.png"
-        /></a>
+        <a href="https://github.com/melkepakken/jchat-plus" target="_blank">
+          <img class="github" src="img/github.png" />
+        </a>
       </p>
 
       <p>

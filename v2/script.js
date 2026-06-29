@@ -18,6 +18,11 @@
 Chat = {
   info: {
     channel: null,
+    preview: "preview" in $.QueryString,
+    previewTimer: null,
+    previewSeedTimer: null,
+    previewIndex: 0,
+    previewMessageDelay: 800,
     kickRoomId:
       "kick_room" in $.QueryString &&
       !Number.isNaN(parseInt($.QueryString.kick_room, 10))
@@ -242,6 +247,255 @@ Chat = {
     }).appendTo("head");
   },
 
+  applyStaticStyles: function () {
+    let size = sizes[Chat.info.size - 1] || sizes[2];
+    let font = fonts[Chat.info.font] || fonts[0];
+
+    $(".chat_size, .chat_font, .chat_variant").remove();
+
+    appendCSS("size", size);
+    appendCSS("font", font);
+
+    Chat.applyOverlayStyles();
+
+    if (Chat.info.smallCaps) {
+      appendCSS("variant", "SmallCaps");
+    }
+  },
+
+  isPreviewKickEnabled: function () {
+    return Chat.info.kickRoomId || Chat.info.kickChannel !== false;
+  },
+
+  loadPreviewKickAssets: function (callback) {
+    if (!Chat.info.preview || !Chat.isPreviewKickEnabled()) {
+      if (callback) callback();
+      return;
+    }
+
+    if (Chat.info.kickRoomId) {
+      if (callback) callback();
+      return;
+    }
+
+    var slug = Chat.normalizeKickChannel(Chat.info.kickChannel);
+
+    if (!slug) {
+      if (callback) callback();
+      return;
+    }
+
+    Chat.resolveKickChatroomId(slug).always(function () {
+      if (callback) callback();
+    });
+  },
+
+  previewMessages: window.jChatPlusPreviewMessages || [],
+
+  normalizeBlockedUsers: function (value) {
+    if (!value) {
+      return false;
+    }
+
+    var users = String(value)
+      .toLowerCase()
+      .split(",")
+      .map(function (user) {
+        return user.trim();
+      })
+      .filter(Boolean);
+
+    return users.length ? users : false;
+  },
+
+  isUserBlocked: function (value) {
+    if (!Chat.info.blockedUsers || !value) {
+      return false;
+    }
+
+    return Chat.info.blockedUsers.includes(String(value).toLowerCase());
+  },
+
+  shouldShowPreviewMessage: function (item) {
+    if (!item) {
+      return false;
+    }
+
+    if (item.platform === "kick") {
+      if (!Chat.isPreviewKickEnabled()) {
+        return false;
+      }
+
+      var sender = item.data && item.data.sender ? item.data.sender : {};
+
+      if (
+        Chat.isUserBlocked(sender.slug) ||
+        Chat.isUserBlocked(sender.username)
+      ) {
+        return false;
+      }
+    } else {
+      var displayName = item.info && item.info["display-name"];
+
+      if (Chat.isUserBlocked(item.nick) || Chat.isUserBlocked(displayName)) {
+        return false;
+      }
+    }
+
+    if (!Chat.info.showBots && item.bot) {
+      return false;
+    }
+
+    if (Chat.info.hideCommands && item.command) {
+      return false;
+    }
+
+    return true;
+  },
+
+  writePreviewMessage: function () {
+    if (!Chat.previewMessages || !Chat.previewMessages.length) {
+      return;
+    }
+
+    var item = null;
+
+    for (var i = 0; i < Chat.previewMessages.length; i++) {
+      var candidate =
+        Chat.previewMessages[
+          Chat.info.previewIndex % Chat.previewMessages.length
+        ];
+
+      Chat.info.previewIndex++;
+
+      if (Chat.shouldShowPreviewMessage(candidate)) {
+        item = candidate;
+        break;
+      }
+    }
+
+    if (!item) {
+      return;
+    }
+
+    if (item.platform === "kick") {
+      var kickData = $.extend(true, {}, item.data);
+
+      kickData.id = "preview-kick-" + Date.now() + "-" + Chat.info.previewIndex;
+
+      Chat.writeKick(kickData);
+      return;
+    }
+
+    var info = $.extend({}, item.info);
+
+    info.id = "preview-twitch-" + Date.now() + "-" + Chat.info.previewIndex;
+
+    Chat.write(item.nick, info, item.message);
+  },
+
+  seedPreviewMessages: function () {
+    window.clearTimeout(Chat.info.previewSeedTimer);
+
+    Chat.info.previewSeedTimer = window.setTimeout(function () {
+      Chat.writePreviewMessage();
+      Chat.cleanupRenderedLines();
+    }, 150);
+  },
+
+  cleanupRenderedLines: function () {
+    var $lines = $(".chat_line");
+
+    $lines.each(function () {
+      var rect = this.getBoundingClientRect();
+
+      if (rect.bottom < -20) {
+        $(this).remove();
+      }
+    });
+
+    $lines = $(".chat_line");
+
+    while ($lines.length > 60) {
+      $lines.eq(0).remove();
+      $lines = $(".chat_line");
+    }
+  },
+
+  startPreview: function () {
+    Chat.info.lines = [];
+    $("#chat_container").empty();
+
+    window.clearTimeout(Chat.info.previewSeedTimer);
+    window.clearInterval(Chat.info.previewTimer);
+
+    Chat.seedPreviewMessages();
+
+    Chat.info.previewTimer = window.setInterval(function () {
+      Chat.writePreviewMessage();
+      Chat.cleanupRenderedLines();
+    }, Chat.info.previewMessageDelay);
+  },
+
+  applyPreviewQuery: function (query) {
+    var params = new URLSearchParams(query || "");
+
+    function truthy(name) {
+      return params.has(name) && /^(1|true|yes)$/i.test(params.get(name));
+    }
+
+    Chat.info.size = params.has("size") ? parseInt(params.get("size"), 10) : 3;
+    Chat.info.font = params.has("font") ? parseInt(params.get("font"), 10) : 0;
+    Chat.info.stroke = params.has("stroke")
+      ? parseInt(params.get("stroke"), 10)
+      : false;
+    Chat.info.shadow = params.has("shadow")
+      ? parseInt(params.get("shadow"), 10)
+      : false;
+
+    Chat.info.animate = truthy("animate");
+    Chat.info.showBots = truthy("bots");
+    Chat.info.hideCommands = truthy("hide_commands");
+    Chat.info.hideBadges = truthy("hide_badges");
+    Chat.info.hideAllBadges = params.has("hide_all_badges");
+    Chat.info.smallCaps = truthy("small_caps");
+
+    Chat.info.fade = params.has("fade")
+      ? parseInt(params.get("fade"), 10)
+      : false;
+
+    Chat.info.nicknameColor = params.get("cN") || false;
+    Chat.info.emojiStyle =
+      params.has("emoji") && params.get("emoji").toLowerCase() === "native"
+        ? "native"
+        : "twemoji";
+    Chat.info.kickRoomId =
+      params.has("kick_room") &&
+      !Number.isNaN(parseInt(params.get("kick_room"), 10))
+        ? parseInt(params.get("kick_room"), 10)
+        : false;
+
+    Chat.info.kickChannel = params.has("kick")
+      ? params.get("kick")
+      : params.has("kick_channel")
+        ? params.get("kick_channel")
+        : false;
+    Chat.info.blockedUsers = params.has("block")
+      ? Chat.normalizeBlockedUsers(params.get("block"))
+      : false;
+    Chat.applyStaticStyles();
+
+    if (Chat.info.preview) {
+      Chat.info.lines = [];
+      $("#chat_container").empty();
+      Chat.info.previewIndex = 0;
+
+      Chat.loadPreviewKickAssets(function () {
+        Chat.seedPreviewMessages();
+      });
+    }
+  },
+
   loadEmotes: function (channelID) {
     Chat.info.emotes = {};
     // Load BTTV, FFZ and 7TV emotes
@@ -350,17 +604,7 @@ Chat = {
       Chat.loadEmotes(Chat.info.channelID);
 
       // Load CSS
-      let size = sizes[Chat.info.size - 1];
-      let font = fonts[Chat.info.font];
-
-      appendCSS("size", size);
-      appendCSS("font", font);
-
-      Chat.applyOverlayStyles();
-
-      if (Chat.info.smallCaps) {
-        appendCSS("variant", "SmallCaps");
-      }
+      Chat.applyStaticStyles();
 
       // Load badges
       Chat.twitchApi("/chat/badges/global").done(function (global) {
@@ -480,7 +724,16 @@ Chat = {
           console.warn("jChat: Failed to load cheermotes.", err);
         });
 
-      callback(true);
+      if (Chat.info.preview) {
+        Chat.loadPreviewKickAssets(function () {
+          Chat.startPreview();
+        });
+        return;
+      }
+
+      if (callback) {
+        callback(true);
+      }
     });
   },
 
@@ -511,6 +764,8 @@ Chat = {
         $(".chat_line").eq(0).remove();
         linesToDelete--;
       }
+
+      Chat.cleanupRenderedLines();
     } else if (Chat.info.fade) {
       var messageTime = $(".chat_line").eq(0).data("time");
       if ((Date.now() - messageTime) / 1000 >= Chat.info.fade) {
@@ -642,6 +897,12 @@ Chat = {
 
   write: function (nick, info, message) {
     if (info) {
+      if (
+        Chat.isUserBlocked(nick) ||
+        Chat.isUserBlocked(info["display-name"])
+      ) {
+        return;
+      }
       if (info.id && Chat.info.deletedMessages[info.id.toString()]) return;
       var $chatLine = $("<div></div>");
       $chatLine.addClass("chat_line");
@@ -2425,10 +2686,12 @@ Chat = {
     var title = $(document).prop("title");
     $(document).prop("title", title + Chat.info.channel);
 
-    if (Chat.info.kickRoomId) {
-      Chat.connectKick(Chat.info.kickRoomId);
-    } else if (Chat.info.kickChannel !== false) {
-      Chat.connectKickChannel(Chat.info.kickChannel);
+    if (!Chat.info.preview) {
+      if (Chat.info.kickRoomId) {
+        Chat.connectKick(Chat.info.kickRoomId);
+      } else if (Chat.info.kickChannel !== false) {
+        Chat.connectKickChannel(Chat.info.kickChannel);
+      }
     }
 
     Chat.load(function () {
@@ -2534,4 +2797,22 @@ $(document).ready(function () {
   Chat.connect(
     $.QueryString.channel ? $.QueryString.channel.toLowerCase() : "giambaj",
   );
+});
+
+window.addEventListener("message", function (event) {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+
+  var data = event.data || {};
+
+  if (data.type !== "jchat_plus_preview_settings") {
+    return;
+  }
+
+  if (!Chat.info.preview) {
+    return;
+  }
+
+  Chat.applyPreviewQuery(data.query);
 });
