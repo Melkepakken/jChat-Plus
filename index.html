@@ -26,7 +26,7 @@
 
   <body>
     <header>
-      <img src="img/peepoHappy.png" />
+      <img src="img/peepoHappy_plus.png" />
       <div>
         <h1>jChat+</h1>
         <h2>Setup</h2>
@@ -192,31 +192,36 @@
     </section>
 
     <section id="donation">
-      <span>
-        jChat+ is free and open source.
-        <br>
-        If it helps your stream, feel free to support development through Kvalvik Studios.<br />
-        <img class="emote" src="img/Flowee.png" />
-      </span>
+      <p class="donation_text">
+        jChat+ is free and open source.<br />
+        If it helps your stream, feel free to support development through
+        Kvalvik Studios.
+        <img class="emote donation_emote" src="img/Flowee.png" alt="" />
+      </p>
 
-      <div id="donate-button-container">
-        <div id="donate-button"></div>
-        <script
-          src="https://www.paypalobjects.com/donate/sdk/donate-sdk.js"
-          charset="UTF-8"
-        ></script>
-        <script>
-          PayPal.Donation.Button({
-            env: "production",
-            hosted_button_id: "268DLMTLTK4NU",
-            image: {
-              src: "https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif",
-              alt: "Donate with PayPal button",
-              title: "PayPal - The safer, easier way to pay online!",
-            },
-          }).render("#donate-button");
-        </script>
-      </div>
+      <form
+        id="donation_form"
+        action="https://www.paypal.com/donate"
+        method="post"
+        target="_top"
+      >
+        <input type="hidden" name="hosted_button_id" value="268DLMTLTK4NU" />
+        <input
+          type="image"
+          src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif"
+          border="0"
+          name="submit"
+          title="PayPal - The safer, easier way to pay online!"
+          alt="Donate with PayPal button"
+        />
+        <img
+          alt=""
+          border="0"
+          src="https://www.paypal.com/en_NO/i/scr/pixel.gif"
+          width="1"
+          height="1"
+        />
+      </form>
     </section>
 
     <footer>
