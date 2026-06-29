@@ -22,7 +22,11 @@ Chat = {
     previewTimer: null,
     previewSeedTimer: null,
     previewIndex: 0,
-    previewMessageDelay: 800,
+    previewLastMessageKey: null,
+    previewMinDelay: 220,
+    previewMaxDelay: 1200,
+    previewBurstChance: 0.22,
+    previewPauseChance: 0.07,
     kickRoomId:
       "kick_room" in $.QueryString &&
       !Number.isNaN(parseInt($.QueryString.kick_room, 10))
@@ -93,6 +97,8 @@ Chat = {
     ffzapBadges: null,
     bttvBadges: null,
     seventvBadges: null,
+    seventvBadgeCache: {},
+    seventvBadgeRequests: {},
     chatterinoBadges: null,
     cheers: {},
     lines: [],
@@ -353,30 +359,149 @@ Chat = {
     return true;
   },
 
-  writePreviewMessage: function () {
-    if (!Chat.previewMessages || !Chat.previewMessages.length) {
-      return;
+  hasUserBadgeUrl: function (nick, url) {
+    var badges = Chat.info.userBadges[nick];
+
+    if (!Array.isArray(badges) || !url) {
+      return false;
     }
 
-    var item = null;
+    return badges.some(function (badge) {
+      return badge && badge.url === url;
+    });
+  },
 
-    for (var i = 0; i < Chat.previewMessages.length; i++) {
-      var candidate =
-        Chat.previewMessages[
-          Chat.info.previewIndex % Chat.previewMessages.length
-        ];
+  shouldLoadUserBadges: function (nick, userId) {
+    if (!nick) {
+      return false;
+    }
 
-      Chat.info.previewIndex++;
+    if (!Chat.info.userBadges[nick]) {
+      return true;
+    }
 
-      if (Chat.shouldShowPreviewMessage(candidate)) {
-        item = candidate;
-        break;
+    userId = String(userId || "");
+
+    if (/^\d+$/.test(userId)) {
+      var cachedSevenTvBadge = Chat.info.seventvBadgeCache[userId];
+
+      if (cachedSevenTvBadge && cachedSevenTvBadge.url) {
+        return !Chat.hasUserBadgeUrl(nick, cachedSevenTvBadge.url);
+      }
+
+      if (
+        !Object.prototype.hasOwnProperty.call(
+          Chat.info.seventvBadgeCache,
+          userId,
+        ) &&
+        !Chat.info.seventvBadgeRequests[userId]
+      ) {
+        return true;
       }
     }
 
+    return false;
+  },
+
+  getPreviewMessageKey: function (item) {
     if (!item) {
+      return "";
+    }
+
+    if (item.platform === "kick") {
+      var sender = item.data && item.data.sender ? item.data.sender : {};
+
+      return [
+        "kick",
+        sender.slug || sender.username || "",
+        item.data ? item.data.content || "" : "",
+      ].join(":");
+    }
+
+    return ["twitch", item.nick || "", item.message || ""].join(":");
+  },
+
+  pickPreviewMessage: function () {
+    if (!Chat.previewMessages || !Chat.previewMessages.length) {
+      return null;
+    }
+
+    var attempts = Math.max(8, Chat.previewMessages.length * 4);
+    var fallback = null;
+
+    for (var i = 0; i < attempts; i++) {
+      var candidate =
+        Chat.previewMessages[
+          Math.floor(Math.random() * Chat.previewMessages.length)
+        ];
+
+      if (!Chat.shouldShowPreviewMessage(candidate)) {
+        continue;
+      }
+
+      if (!fallback) {
+        fallback = candidate;
+      }
+
+      var key = Chat.getPreviewMessageKey(candidate);
+
+      if (key !== Chat.info.previewLastMessageKey) {
+        return candidate;
+      }
+    }
+
+    return fallback;
+  },
+
+  getRandomPreviewDelay: function () {
+    var roll = Math.random();
+
+    function randomBetween(min, max) {
+      return Math.floor(min + Math.random() * (max - min + 1));
+    }
+
+    if (roll < Chat.info.previewBurstChance) {
+      return randomBetween(120, 320);
+    }
+
+    if (roll > 1 - Chat.info.previewPauseChance) {
+      return randomBetween(1600, 2800);
+    }
+
+    return randomBetween(Chat.info.previewMinDelay, Chat.info.previewMaxDelay);
+  },
+
+  scheduleNextPreviewMessage: function (delay) {
+    window.clearTimeout(Chat.info.previewTimer);
+
+    Chat.info.previewTimer = window.setTimeout(
+      function () {
+        Chat.writePreviewMessage(function () {
+          Chat.cleanupRenderedLines();
+          Chat.scheduleNextPreviewMessage();
+        });
+      },
+      typeof delay === "number" && isFinite(delay)
+        ? delay
+        : Chat.getRandomPreviewDelay(),
+    );
+  },
+
+  writePreviewMessage: function (callback) {
+    if (!Chat.previewMessages || !Chat.previewMessages.length) {
+      if (callback) callback();
       return;
     }
+
+    var item = Chat.pickPreviewMessage();
+
+    if (!item) {
+      if (callback) callback();
+      return;
+    }
+
+    Chat.info.previewIndex++;
+    Chat.info.previewLastMessageKey = Chat.getPreviewMessageKey(item);
 
     if (item.platform === "kick") {
       var kickData = $.extend(true, {}, item.data);
@@ -384,6 +509,8 @@ Chat = {
       kickData.id = "preview-kick-" + Date.now() + "-" + Chat.info.previewIndex;
 
       Chat.writeKick(kickData);
+
+      if (callback) callback();
       return;
     }
 
@@ -391,15 +518,38 @@ Chat = {
 
     info.id = "preview-twitch-" + Date.now() + "-" + Chat.info.previewIndex;
 
-    Chat.write(item.nick, info, item.message);
+    function writeTwitchPreviewMessage() {
+      Chat.write(item.nick, info, item.message);
+
+      if (callback) callback();
+    }
+
+    if (
+      !Chat.info.hideBadges &&
+      !Chat.info.hideAllBadges &&
+      Chat.info.bttvBadges &&
+      Chat.info.seventvBadges &&
+      Chat.info.chatterinoBadges &&
+      Chat.info.ffzapBadges &&
+      Chat.shouldLoadUserBadges(item.nick, info["user-id"])
+    ) {
+      Chat.loadUserBadges(item.nick, info["user-id"]).always(
+        writeTwitchPreviewMessage,
+      );
+      return;
+    }
+
+    writeTwitchPreviewMessage();
   },
 
   seedPreviewMessages: function () {
     window.clearTimeout(Chat.info.previewSeedTimer);
 
     Chat.info.previewSeedTimer = window.setTimeout(function () {
-      Chat.writePreviewMessage();
-      Chat.cleanupRenderedLines();
+      Chat.writePreviewMessage(function () {
+        Chat.cleanupRenderedLines();
+        Chat.scheduleNextPreviewMessage();
+      });
     }, 150);
   },
 
@@ -424,17 +574,13 @@ Chat = {
 
   startPreview: function () {
     Chat.info.lines = [];
+    Chat.info.previewLastMessageKey = null;
     $("#chat_container").empty();
 
     window.clearTimeout(Chat.info.previewSeedTimer);
-    window.clearInterval(Chat.info.previewTimer);
+    window.clearTimeout(Chat.info.previewTimer);
 
     Chat.seedPreviewMessages();
-
-    Chat.info.previewTimer = window.setInterval(function () {
-      Chat.writePreviewMessage();
-      Chat.cleanupRenderedLines();
-    }, Chat.info.previewMessageDelay);
   },
 
   applyPreviewQuery: function (query) {
@@ -487,8 +633,12 @@ Chat = {
 
     if (Chat.info.preview) {
       Chat.info.lines = [];
-      $("#chat_container").empty();
       Chat.info.previewIndex = 0;
+      Chat.info.previewLastMessageKey = null;
+      $("#chat_container").empty();
+
+      window.clearTimeout(Chat.info.previewSeedTimer);
+      window.clearTimeout(Chat.info.previewTimer);
 
       Chat.loadPreviewKickAssets(function () {
         Chat.seedPreviewMessages();
@@ -778,95 +928,247 @@ Chat = {
     }
   }, 200),
 
-  loadUserBadges: function (nick, userId) {
-    Chat.info.userBadges[nick] = [];
-    if (!Chat.info.ffzUserBadges) {
-      return;
+  addUserBadge: function (nick, userBadge) {
+    if (!nick || !userBadge || !userBadge.url) return;
+
+    if (!Array.isArray(Chat.info.userBadges[nick])) {
+      Chat.info.userBadges[nick] = [];
     }
-    $.getJSON("https://api.frankerfacez.com/v1/user/" + nick).always(
-      function (res) {
-        if (res.badges) {
-          Object.entries(res.badges).forEach((badge) => {
-            var userBadge = {
-              description: badge[1].title,
-              url: "https:" + badge[1].urls["4"],
-              color: badge[1].color,
-            };
-            if (!Chat.info.userBadges[nick].includes(userBadge))
-              Chat.info.userBadges[nick].push(userBadge);
-          });
-        }
-        Chat.info.ffzapBadges.forEach((user) => {
-          if (user.id.toString() === userId) {
-            var color = "#755000";
-            if (user.tier == 2) color = user.badge_color || "#755000";
-            else if (user.tier == 3) {
-              if (user.badge_is_colored == 0)
-                color = user.badge_color || "#755000";
-              else color = false;
-            }
-            var userBadge = {
-              description: "FFZ:AP Badge",
-              url: "https://api.ffzap.com/v1/user/badge/" + userId + "/3",
-              color: color,
-            };
-            if (!Chat.info.userBadges[nick].includes(userBadge))
-              Chat.info.userBadges[nick].push(userBadge);
-          }
-        });
-        Chat.info.bttvBadges.forEach((user) => {
-          if (user.name === nick) {
-            var userBadge = {
-              description: user.badge.description,
-              url: user.badge.svg,
-            };
-            if (!Chat.info.userBadges[nick].includes(userBadge))
-              Chat.info.userBadges[nick].push(userBadge);
-          }
-        });
-        if (Array.isArray(Chat.info.seventvBadges)) {
-          Chat.info.seventvBadges.forEach((badge) => {
-            if (!badge || !Array.isArray(badge.users)) return;
 
-            badge.users.forEach((user) => {
-              if (user === nick) {
-                var badgeUrl = null;
+    var exists = Chat.info.userBadges[nick].some(function (existing) {
+      return (
+        existing.description === userBadge.description &&
+        existing.url === userBadge.url
+      );
+    });
 
-                if (badge.urls && badge.urls[2] && badge.urls[2][1]) {
-                  badgeUrl = badge.urls[2][1];
-                } else if (badge.urls && badge.urls[0] && badge.urls[0][1]) {
-                  badgeUrl = badge.urls[0][1];
-                } else if (badge.url) {
-                  badgeUrl = badge.url;
-                }
+    if (!exists) {
+      Chat.info.userBadges[nick].push(userBadge);
+    }
+  },
 
-                if (!badgeUrl) return;
+  getSevenTvBadgeImageUrl: function (badgeId) {
+    if (!badgeId) return null;
 
-                var userBadge = {
-                  description: badge.tooltip || badge.name || "7TV Badge",
-                  url: badgeUrl,
-                };
-
-                if (!Chat.info.userBadges[nick].includes(userBadge))
-                  Chat.info.userBadges[nick].push(userBadge);
-              }
-            });
-          });
-        }
-        Chat.info.chatterinoBadges.forEach((badge) => {
-          badge.users.forEach((user) => {
-            if (user === userId) {
-              var userBadge = {
-                description: badge.tooltip,
-                url: badge.image3 || badge.image2 || badge.image1,
-              };
-              if (!Chat.info.userBadges[nick].includes(userBadge))
-                Chat.info.userBadges[nick].push(userBadge);
-            }
-          });
-        });
-      },
+    return (
+      "https://cdn.7tv.app/badge/" +
+      encodeURIComponent(String(badgeId)) +
+      "/3x.webp"
     );
+  },
+
+  extractSevenTvBadge: function (res) {
+    if (!res) return null;
+
+    var user = res.user || res;
+    var style = user.style || res.style || {};
+    var badge = user.badge || res.badge || null;
+
+    if (badge && badge.id) {
+      return {
+        description: badge.name || badge.title || "7TV Badge",
+        url:
+          badge.image_url ||
+          badge.image ||
+          badge.url ||
+          Chat.getSevenTvBadgeImageUrl(badge.id),
+      };
+    }
+
+    var badgeId =
+      style.badge_id ||
+      style.badgeId ||
+      user.badge_id ||
+      user.badgeId ||
+      res.badge_id ||
+      res.badgeId;
+
+    if (!badgeId) return null;
+
+    return {
+      description: "7TV Badge",
+      url: Chat.getSevenTvBadgeImageUrl(badgeId),
+    };
+  },
+
+  loadSevenTvUserBadge: function (nick, userId) {
+    var resolved = $.Deferred().resolve().promise();
+
+    if (!nick || !userId) {
+      return resolved;
+    }
+
+    userId = String(userId);
+
+    if (
+      Object.prototype.hasOwnProperty.call(Chat.info.seventvBadgeCache, userId)
+    ) {
+      var cachedBadge = Chat.info.seventvBadgeCache[userId];
+
+      if (cachedBadge) {
+        Chat.addUserBadge(nick, cachedBadge);
+      }
+
+      return resolved;
+    }
+
+    if (Chat.info.seventvBadgeRequests[userId]) {
+      return Chat.info.seventvBadgeRequests[userId].done(function () {
+        var cachedBadge = Chat.info.seventvBadgeCache[userId];
+
+        if (cachedBadge) {
+          Chat.addUserBadge(nick, cachedBadge);
+        }
+      });
+    }
+
+    var request = $.getJSON(
+      "https://7tv.io/v3/users/twitch/" + encodeURIComponent(userId),
+    )
+      .done(function (res) {
+        var badge = Chat.extractSevenTvBadge(res);
+
+        Chat.info.seventvBadgeCache[userId] = badge || null;
+
+        if (badge) {
+          Chat.addUserBadge(nick, badge);
+        }
+      })
+      .fail(function () {
+        Chat.info.seventvBadgeCache[userId] = null;
+      })
+      .always(function () {
+        delete Chat.info.seventvBadgeRequests[userId];
+      });
+
+    Chat.info.seventvBadgeRequests[userId] = request;
+
+    return request;
+  },
+
+  loadUserBadges: function (nick, userId) {
+    if (!Array.isArray(Chat.info.userBadges[nick])) {
+      Chat.info.userBadges[nick] = [];
+    }
+
+    var normalizedNick = String(nick || "").toLowerCase();
+    var normalizedUserId = String(userId || "");
+    var requests = [];
+
+    function waitFor(request) {
+      var done = $.Deferred();
+
+      request.always(function () {
+        done.resolve();
+      });
+
+      return done.promise();
+    }
+
+    if (Chat.info.ffzUserBadges) {
+      var ffzRequest = $.getJSON(
+        "https://api.frankerfacez.com/v1/user/" + encodeURIComponent(nick),
+      ).done(function (res) {
+        if (!res || !res.badges) return;
+
+        Object.entries(res.badges).forEach(function (badge) {
+          if (!badge[1] || !badge[1].urls || !badge[1].urls["4"]) return;
+
+          Chat.addUserBadge(nick, {
+            description: badge[1].title,
+            url: "https:" + badge[1].urls["4"],
+            color: badge[1].color,
+          });
+        });
+      });
+
+      requests.push(waitFor(ffzRequest));
+    }
+
+    if (Array.isArray(Chat.info.ffzapBadges) && normalizedUserId) {
+      Chat.info.ffzapBadges.forEach(function (user) {
+        if (!user || String(user.id) !== normalizedUserId) return;
+
+        var color = "#755000";
+
+        if (user.tier == 2) {
+          color = user.badge_color || "#755000";
+        } else if (user.tier == 3) {
+          color =
+            user.badge_is_colored == 0 ? user.badge_color || "#755000" : false;
+        }
+
+        Chat.addUserBadge(nick, {
+          description: "FFZ:AP Badge",
+          url: "https://api.ffzap.com/v1/user/badge/" + normalizedUserId + "/3",
+          color: color,
+        });
+      });
+    }
+
+    if (Array.isArray(Chat.info.bttvBadges)) {
+      Chat.info.bttvBadges.forEach(function (user) {
+        if (!user || !user.badge) return;
+        if (String(user.name || "").toLowerCase() !== normalizedNick) return;
+
+        Chat.addUserBadge(nick, {
+          description: user.badge.description,
+          url: user.badge.svg,
+        });
+      });
+    }
+
+    if (Array.isArray(Chat.info.seventvBadges)) {
+      Chat.info.seventvBadges.forEach(function (badge) {
+        if (!badge || !Array.isArray(badge.users)) return;
+
+        badge.users.forEach(function (user) {
+          if (String(user || "").toLowerCase() !== normalizedNick) return;
+
+          var badgeUrl = null;
+
+          if (badge.urls && badge.urls[2] && badge.urls[2][1]) {
+            badgeUrl = badge.urls[2][1];
+          } else if (badge.urls && badge.urls[0] && badge.urls[0][1]) {
+            badgeUrl = badge.urls[0][1];
+          } else if (badge.url) {
+            badgeUrl = badge.url;
+          }
+
+          if (!badgeUrl) return;
+
+          Chat.addUserBadge(nick, {
+            description: badge.tooltip || badge.name || "7TV Badge",
+            url: badgeUrl,
+          });
+        });
+      });
+    }
+
+    if (/^\d+$/.test(normalizedUserId)) {
+      requests.push(waitFor(Chat.loadSevenTvUserBadge(nick, normalizedUserId)));
+    }
+
+    if (Array.isArray(Chat.info.chatterinoBadges) && normalizedUserId) {
+      Chat.info.chatterinoBadges.forEach(function (badge) {
+        if (!badge || !Array.isArray(badge.users)) return;
+
+        badge.users.forEach(function (user) {
+          if (String(user) !== normalizedUserId) return;
+
+          Chat.addUserBadge(nick, {
+            description: badge.tooltip,
+            url: badge.image3 || badge.image2 || badge.image1,
+          });
+        });
+      });
+    }
+
+    if (requests.length) {
+      return $.when.apply($, requests);
+    }
+
+    return $.Deferred().resolve().promise();
   },
 
   appendChatBadge: function ($target, badgeData) {
@@ -2773,18 +3075,26 @@ Chat = {
                 if (Chat.info.blockedUsers.includes(nick)) return;
               }
 
-              if (!Chat.info.hideBadges && !Chat.info.hideAllBadges) {
-                if (
-                  Chat.info.bttvBadges &&
-                  Chat.info.seventvBadges &&
-                  Chat.info.chatterinoBadges &&
-                  Chat.info.ffzapBadges &&
-                  !Chat.info.userBadges[nick]
-                )
-                  Chat.loadUserBadges(nick, message.tags["user-id"]);
+              function writeTwitchMessage() {
+                Chat.write(nick, message.tags, message.params[1]);
               }
 
-              Chat.write(nick, message.tags, message.params[1]);
+              if (
+                !Chat.info.hideBadges &&
+                !Chat.info.hideAllBadges &&
+                Chat.info.bttvBadges &&
+                Chat.info.seventvBadges &&
+                Chat.info.chatterinoBadges &&
+                Chat.info.ffzapBadges &&
+                Chat.shouldLoadUserBadges(nick, message.tags["user-id"])
+              ) {
+                Chat.loadUserBadges(nick, message.tags["user-id"]).always(
+                  writeTwitchMessage,
+                );
+                return;
+              }
+
+              writeTwitchMessage();
               return;
           }
         });
