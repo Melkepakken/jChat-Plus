@@ -201,7 +201,7 @@
       "SevenTVDrip",
       "#ffffff",
       "",
-      "7TV badge test using a real Twitch user id with 7TV cosmetics. Name paint is for later.",
+      "7TV badge test using a real Twitch user id with 7TV cosmetics.",
       { userId: "78968851" },
     ),
   ];

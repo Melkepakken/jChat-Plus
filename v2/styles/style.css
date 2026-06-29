@@ -26,6 +26,14 @@ body {
     border-radius: 10%;
 }
 
+#chat_container .nick.seventv_name_paint {
+    display: inline-block;
+    text-shadow: none !important;
+    -webkit-text-stroke: 0 !important;
+    background-clip: text;
+    -webkit-background-clip: text;
+}
+
 .kick_badge {
     display: inline-block;
     height: 1em;

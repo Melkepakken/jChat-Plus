@@ -89,6 +89,7 @@ function getOverlayData(options) {
     small_caps: $small_caps.is(":checked"),
     kick: getKickValue(),
     emoji: $emoji.val() || false,
+    seventv_paints: $seventv_paints.is(":checked"),
     cN: $force_color_bool.is(":checked") ? $force_color.val() : false,
     block: $block.val().trim() || false,
     ffz_room_badges: $ffz_room_badges.is(":checked"),
@@ -223,6 +224,7 @@ function resetForm() {
   $size.val("2");
   $font.val("0");
   $emoji.val("");
+  $seventv_paints.prop("checked", false);
   $stroke.val("0");
   $shadow.val("0");
 
@@ -286,6 +288,7 @@ const $channel = $('input[name="channel"]');
 const $size = $("select[name='size']");
 const $font = $("select[name='font']");
 const $emoji = $("select[name='emoji']");
+const $seventv_paints = $('input[name="seventv_paints"]');
 const $stroke = $("select[name='stroke']");
 const $shadow = $("select[name='shadow']");
 
