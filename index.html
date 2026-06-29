@@ -1,6 +1,7 @@
 <!doctype html>
 <html>
   <head>
+    <meta charset="UTF-8" />
     <title>jChat+ &bull; Twitch + Kick Chat Overlay</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" />
     <link
@@ -18,7 +19,39 @@
       class="preview_font"
       href="styles/font_BalooTammudu.css"
     />
+    <style>
+      #example {
+        text-align: left;
+        overflow-wrap: break-word;
+      }
+
+      #example .chat_line {
+        display: block;
+        clear: both;
+        line-height: 1.25;
+        margin: 0.25em 0;
+      }
+
+      #example .user_info {
+        white-space: nowrap;
+      }
+
+      #example .preview-source {
+        opacity: 0.8;
+        font-size: 0.75em;
+        margin-right: 0.35em;
+        text-shadow: none !important;
+      }
+
+      #example img.emoji {
+        height: 1em;
+        width: 1em;
+        margin: 0 0.05em;
+        vertical-align: -0.1em;
+      }
+    </style>
     <script src="jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js"></script>
     <script src="settings.js" defer></script>
     <script src="utils.js" defer></script>
     <script src="script.js" defer></script>
@@ -52,27 +85,11 @@
 
       <form name="generator">
         <div class="form_row center">
-          <input type="text" name="channel" required placeholder="Twitch channel" />
-        </div>
-
-        <div class="form_row center">
-          <input type="checkbox" name="kick_enabled" />
-          <label for="kick_enabled">Enable Kick</label>
-        </div>
-
-        <div class="form_row center">
           <input
             type="text"
-            name="kick_channel"
-            placeholder="Kick channel, optional"
-          />
-        </div>
-
-        <div class="form_row center">
-          <input
-            type="text"
-            name="kick_room"
-            placeholder="Kick room ID, optional"
+            name="channel"
+            required
+            placeholder="Twitch channel"
           />
         </div>
 
@@ -131,16 +148,24 @@
               <label for="badges">Hide special badges</label>
             </div>
 
+            <div class="form_row left">
+              <input type="checkbox" name="all_badges" />
+              <label for="all_badges">Hide all badges</label>
+            </div>
+
             <br />
 
             <div class="form_row left">
-              <input type="checkbox" name="force_color_bool" />
-              <label for="force_color_bool">Force name color</label>
+              <input type="checkbox" name="kick_enabled" />
+              <label for="kick_enabled">Enable Kick</label>
             </div>
 
-            <div class="form_row left">
-              <input type="color" name="force_color" value="#ffcc00" />
-              <label for="force_color">Name color</label>
+            <div id="kick_channel_row" class="form_row left hidden">
+              <input
+                type="text"
+                name="kick_channel"
+                placeholder="Kick channel"
+              />
             </div>
           </div>
 
@@ -192,19 +217,32 @@
             <br />
 
             <div class="form_row right">
-              <input
-                type="text"
-                name="block"
-                placeholder="Block users, comma separated"
-              />
+              <label for="force_color_bool">Force color</label>
+              <input type="checkbox" name="force_color_bool" />
             </div>
 
+            <div id="force_color_row" class="form_row right hidden">
+              <label for="force_color">Name color</label>
+              <input type="color" name="force_color" value="#ffcc00" />
+            </div>
+
+            <br />
+
             <div class="form_row right">
+              <label for="advanced_enabled">Advanced</label>
+              <input type="checkbox" name="advanced_enabled" />
+            </div>
+
+            <div id="advanced_block_row" class="form_row right hidden">
+              <input type="text" name="block" placeholder="Block users" />
+            </div>
+
+            <div id="advanced_ffz_room_row" class="form_row right hidden">
               <label for="ffz_room_badges">FFZ room badges</label>
               <input type="checkbox" name="ffz_room_badges" />
             </div>
 
-            <div class="form_row right">
+            <div id="advanced_ffz_user_row" class="form_row right hidden">
               <label for="ffz_user_badges">FFZ user badges</label>
               <input type="checkbox" name="ffz_user_badges" />
             </div>
@@ -216,40 +254,7 @@
             <img id="brightness" src="img/light.png" /> <label>Preview:</label>
           </div>
 
-          <div id="example">
-            <div class="chat_line">
-              <span class="user_info"
-                ><img
-                  class="badge special"
-                  src="https://cdn.frankerfacez.com/badge/3/4"
-                  style="background-color: rgb(117, 80, 0)"
-                /><img
-                  class="badge special"
-                  src="https://cdn.7tv.app/badge/60d5998fb0ac44b85331fe2b/3x"
-                /><img
-                  class="badge"
-                  src="https://static-cdn.jtvnw.net/badges/v1/3158e758-3cb4-43c5-94b3-7639810451c5/3"
-                /><span class="nick" style="color: rgb(38, 255, 0)"
-                  >Melkepakken</span
-                >
-                <span class="colon">:</span> </span
-              ><span class="message"
-                ><img
-                  class="cheer_emote"
-                  src="https://d3aqoihi2n8ty8.cloudfront.net/actions/cheer/dark/animated/100/4.gif" /><span
-                  class="cheer_bits"
-                  >100</span
-                >
-                Nice chat
-                <img
-                  class="emote"
-                  src="https://cdn.betterttv.net/frankerfacez_emote/341767/4" />
-                <img
-                  class="emote"
-                  src="https://cdn.7tv.app/emote/6040aacfcf6746000db1034f/4x"
-              /></span>
-            </div>
-          </div>
+          <div id="example"></div>
 
           <input type="submit" value="Generate" />
         </div>

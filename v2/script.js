@@ -54,6 +54,7 @@ Chat = {
       "hide_badges" in $.QueryString
         ? $.QueryString.hide_badges.toLowerCase() === "true"
         : false,
+    hideAllBadges: "hide_all_badges" in $.QueryString,
     nicknameColor: "cN" in $.QueryString ? $.QueryString.cN : false,
     emojiStyle:
       "emoji" in $.QueryString && $.QueryString.emoji.toLowerCase() === "native"
@@ -116,6 +117,129 @@ Chat = {
       data: data || {},
       dataType: "json",
     });
+  },
+
+  applyOverlayStyles: function () {
+    $("#jchat_plus_overlay_styles").remove();
+
+    var rules = [];
+
+    function strokeShadows(value) {
+      var stroke = Number(value);
+
+      if (stroke === 1) {
+        return ["-1px 0 #000", "1px 0 #000", "0 -1px #000", "0 1px #000"];
+      }
+
+      if (stroke === 2) {
+        return [
+          "-1px -1px #000",
+          "-1px 0 #000",
+          "-1px 1px #000",
+          "0 -1px #000",
+          "0 1px #000",
+          "1px -1px #000",
+          "1px 0 #000",
+          "1px 1px #000",
+        ];
+      }
+
+      if (stroke === 3) {
+        return [
+          "-2px -2px #000",
+          "-2px 0 #000",
+          "-2px 2px #000",
+          "0 -2px #000",
+          "0 2px #000",
+          "2px -2px #000",
+          "2px 0 #000",
+          "2px 2px #000",
+        ];
+      }
+
+      if (stroke === 4) {
+        return [
+          "-3px -3px #000",
+          "-3px 0 #000",
+          "-3px 3px #000",
+          "0 -3px #000",
+          "0 3px #000",
+          "3px -3px #000",
+          "3px 0 #000",
+          "3px 3px #000",
+        ];
+      }
+
+      return [];
+    }
+
+    function normalShadows(value) {
+      var shadow = Number(value);
+
+      if (shadow === 1) {
+        return ["1px 1px 2px #000"];
+      }
+
+      if (shadow === 2) {
+        return ["2px 2px 4px #000"];
+      }
+
+      if (shadow === 3) {
+        return ["3px 3px 6px #000"];
+      }
+
+      return [];
+    }
+
+    if (Chat.info.hideAllBadges) {
+      rules.push(
+        [
+          ".badge",
+          "img.badge",
+          ".special",
+          "img.special",
+          ".kick_badge",
+          "img.kick_badge",
+          ".user_info > img",
+        ].join(", ") + " { display: none !important; }",
+      );
+    }
+
+    var shadows = strokeShadows(Chat.info.stroke).concat(
+      normalShadows(Chat.info.shadow),
+    );
+
+    rules.push(
+      [
+        "#chat_container",
+        "#chat_container .chat_line",
+        "#chat_container .nick",
+        "#chat_container .message",
+        "#chat_container .colon",
+      ].join(", ") + " { -webkit-text-stroke: 0 !important; }",
+    );
+
+    if (shadows.length) {
+      rules.push(
+        [
+          "#chat_container .nick",
+          "#chat_container .message",
+          "#chat_container .colon",
+        ].join(", ") +
+          " { text-shadow: " +
+          shadows.join(", ") +
+          " !important; }",
+      );
+    }
+
+    rules.push(
+      "#chat_container .cheer_bits { -webkit-text-stroke: 0 !important; text-shadow: none !important; }",
+    );
+
+    $("<style>", {
+      id: "jchat_plus_overlay_styles",
+      text: rules.join("\n"),
+    }).appendTo("head");
   },
 
   loadEmotes: function (channelID) {
@@ -232,14 +356,8 @@ Chat = {
       appendCSS("size", size);
       appendCSS("font", font);
 
-      if (Chat.info.stroke && Chat.info.stroke > 0) {
-        let stroke = strokes[Chat.info.stroke - 1];
-        appendCSS("stroke", stroke);
-      }
-      if (Chat.info.shadow && Chat.info.shadow > 0) {
-        let shadow = shadows[Chat.info.shadow - 1];
-        appendCSS("shadow", shadow);
-      }
+      Chat.applyOverlayStyles();
+
       if (Chat.info.smallCaps) {
         appendCSS("variant", "SmallCaps");
       }
@@ -301,7 +419,7 @@ Chat = {
       });
 
       // Load users badges
-      if (!Chat.info.hideBadges) {
+      if (!Chat.info.hideBadges && !Chat.info.hideAllBadges) {
         $.getJSON("https://api.ffzap.com/v1/supporters")
           .done(function (res) {
             Chat.info.ffzapBadges = res;
@@ -497,6 +615,7 @@ Chat = {
   },
 
   appendChatBadge: function ($target, badgeData) {
+    if (Chat.info.hideAllBadges) return null;
     if (!badgeData) return null;
 
     var $badge;
@@ -2391,7 +2510,7 @@ Chat = {
                 if (Chat.info.blockedUsers.includes(nick)) return;
               }
 
-              if (!Chat.info.hideBadges) {
+              if (!Chat.info.hideBadges && !Chat.info.hideAllBadges) {
                 if (
                   Chat.info.bttvBadges &&
                   Chat.info.seventvBadges &&
