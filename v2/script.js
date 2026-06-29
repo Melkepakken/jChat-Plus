@@ -19,9 +19,9 @@ Chat = {
   info: {
     channel: null,
     preview:
-  "preview" in $.QueryString
-    ? /^(1|true|yes)$/i.test($.QueryString.preview)
-    : false,
+      "preview" in $.QueryString
+        ? /^(1|true|yes)$/i.test($.QueryString.preview)
+        : false,
     previewTimer: null,
     previewSeedTimer: null,
     previewIndex: 0,
@@ -542,9 +542,17 @@ Chat = {
         Chat.shouldLoadUserBadges(item.nick, info["user-id"])) ||
       Chat.shouldLoadSevenTvNamePaint(info["user-id"])
     ) {
-      Chat.loadUserBadges(item.nick, info["user-id"]).always(
-        writeTwitchPreviewMessage,
-      );
+      var originalFfzUserBadges = Chat.info.ffzUserBadges;
+
+      if (Chat.info.preview && !item.ffzUserBadge) {
+        Chat.info.ffzUserBadges = false;
+      }
+
+      Chat.loadUserBadges(item.nick, info["user-id"]).always(function () {
+        Chat.info.ffzUserBadges = originalFfzUserBadges;
+        writeTwitchPreviewMessage();
+      });
+
       return;
     }
 
@@ -1883,13 +1891,35 @@ Chat = {
       ).done(function (res) {
         if (!res || !res.badges) return;
 
-        Object.entries(res.badges).forEach(function (badge) {
-          if (!badge[1] || !badge[1].urls || !badge[1].urls["4"]) return;
+        var userBadgeIds =
+          res.user && Array.isArray(res.user.badges)
+            ? res.user.badges.map(function (id) {
+                return String(id);
+              })
+            : Object.keys(res.badges);
+
+        userBadgeIds.forEach(function (badgeId) {
+          var badge = res.badges[String(badgeId)];
+
+          if (!badge) return;
+
+          var badgeUrl =
+            badge.image || badge.alpha_image || badge.svg || badge.url;
+
+          if (!badgeUrl) return;
+
+          if (badgeUrl.indexOf("//") === 0) {
+            badgeUrl = "https:" + badgeUrl;
+          }
 
           Chat.addUserBadge(nick, {
-            description: badge[1].title,
-            url: "https:" + badge[1].urls["4"],
-            color: badge[1].color,
+            description:
+              badge.title ||
+              badge.name ||
+              badge.tooltip ||
+              "FrankerFaceZ Badge",
+            url: badgeUrl,
+            color: badge.color || false,
           });
         });
       });

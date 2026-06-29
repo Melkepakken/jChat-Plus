@@ -33,9 +33,6 @@ function advancedOption() {
     rows.removeClass("hidden");
   } else {
     rows.addClass("hidden");
-    $block.val("");
-    $ffz_room_badges.prop("checked", false);
-    $ffz_user_badges.prop("checked", false);
   }
 }
 
@@ -341,7 +338,6 @@ $kick_enabled.change(function () {
 
 $advanced_enabled.change(function () {
   advancedOption();
-  schedulePreviewUpdate();
 });
 
 $force_color_bool.change(function () {
@@ -350,10 +346,11 @@ $force_color_bool.change(function () {
 });
 
 const $url_only_inputs = $channel.add($kick_channel);
+const $preview_ignored_inputs = $url_only_inputs.add($advanced_enabled);
 
 $generator
   .find("input, select")
-  .not($url_only_inputs)
+  .not($preview_ignored_inputs)
   .on("input change", function () {
     schedulePreviewUpdate();
     markUrlStale();
