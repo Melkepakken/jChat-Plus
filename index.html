@@ -46,16 +46,36 @@
       </p>
 
       <p>
-        Use this setup page to generate a browser source URL. Add
-        <code>&amp;kick=true</code> to the generated URL if your Kick channel
-        uses the same name as your Twitch channel, or use
-        <code>&amp;kick=yourkickchannel</code> for a specific Kick channel.
+        Use this setup page to generate a browser source URL. Enable Kick if you
+        want Twitch and Kick chat in the same overlay.
       </p>
 
       <form name="generator">
         <div class="form_row center">
-          <input type="text" name="channel" required placeholder="Channel" />
+          <input type="text" name="channel" required placeholder="Twitch channel" />
         </div>
+
+        <div class="form_row center">
+          <input type="checkbox" name="kick_enabled" />
+          <label for="kick_enabled">Enable Kick</label>
+        </div>
+
+        <div class="form_row center">
+          <input
+            type="text"
+            name="kick_channel"
+            placeholder="Kick channel, optional"
+          />
+        </div>
+
+        <div class="form_row center">
+          <input
+            type="text"
+            name="kick_room"
+            placeholder="Kick room ID, optional"
+          />
+        </div>
+
         <div class="form_table">
           <div class="form_col">
             <div class="form_row left">
@@ -66,6 +86,7 @@
               </select>
               <label for="size">Size</label>
             </div>
+
             <div class="form_row left">
               <select name="font">
                 <option value="0" selected>Baloo Tammudu</option>
@@ -83,20 +104,46 @@
               </select>
               <label for="font">Font</label>
             </div>
+
+            <div class="form_row left">
+              <select name="emoji">
+                <option value="">Default</option>
+                <option value="twemoji">Twemoji</option>
+                <option value="native">Native</option>
+              </select>
+              <label for="emoji">Emoji</label>
+            </div>
+
             <br />
+
             <div class="form_row left">
               <input type="checkbox" name="bots" />
               <label for="bots">Show bots</label>
             </div>
+
             <div class="form_row left">
               <input type="checkbox" name="commands" />
               <label for="commands">Hide commands</label>
             </div>
+
             <div class="form_row left">
               <input type="checkbox" name="badges" />
               <label for="badges">Hide special badges</label>
             </div>
+
+            <br />
+
+            <div class="form_row left">
+              <input type="checkbox" name="force_color_bool" />
+              <label for="force_color_bool">Force name color</label>
+            </div>
+
+            <div class="form_row left">
+              <input type="color" name="force_color" value="#ffcc00" />
+              <label for="force_color">Name color</label>
+            </div>
           </div>
+
           <div class="form_col">
             <div class="form_row right">
               <label for="stroke">Stroke</label>
@@ -108,6 +155,7 @@
                 <option value="4">Thicker</option>
               </select>
             </div>
+
             <div class="form_row right">
               <label for="shadow">Shadow</label>
               <select name="shadow">
@@ -117,11 +165,14 @@
                 <option value="3">Large</option>
               </select>
             </div>
+
             <br />
+
             <div class="form_row right">
               <label for="animate">Animate</label>
               <input type="checkbox" name="animate" />
             </div>
+
             <div class="form_row right">
               <label for="fade">Fade</label>
               <input
@@ -132,9 +183,30 @@
               /><span id="fade_seconds" class="hidden">sec</span>
               <input type="checkbox" name="fade_bool" />
             </div>
+
             <div class="form_row right">
               <label for="small_caps">Caps</label>
               <input type="checkbox" name="small_caps" />
+            </div>
+
+            <br />
+
+            <div class="form_row right">
+              <input
+                type="text"
+                name="block"
+                placeholder="Block users, comma separated"
+              />
+            </div>
+
+            <div class="form_row right">
+              <label for="ffz_room_badges">FFZ room badges</label>
+              <input type="checkbox" name="ffz_room_badges" />
+            </div>
+
+            <div class="form_row right">
+              <label for="ffz_user_badges">FFZ user badges</label>
+              <input type="checkbox" name="ffz_user_badges" />
             </div>
           </div>
         </div>
@@ -143,6 +215,7 @@
           <div class="preview">
             <img id="brightness" src="img/light.png" /> <label>Preview:</label>
           </div>
+
           <div id="example">
             <div class="chat_line">
               <span class="user_info"
@@ -177,9 +250,11 @@
               /></span>
             </div>
           </div>
+
           <input type="submit" value="Generate" />
         </div>
       </form>
+
       <div id="result" class="hidden">
         <div id="alert">Copied to clipboard</div>
         <input type="text" id="url" readonly />
@@ -217,11 +292,13 @@
           ><img class="github" src="img/github.png"
         /></a>
       </p>
+
       <p>
         This application is not affiliated with
         <a href="https://www.twitch.tv/" target="_blank">Twitch</a> or
         <a href="https://kick.com/" target="_blank">Kick</a>.
       </p>
+
       <p>
         Original jChat by
         <a href="https://github.com/giambaJ/jChat" target="_blank">giambaJ</a>.

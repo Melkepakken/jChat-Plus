@@ -22,20 +22,24 @@ function fontUpdate(event) {
 
 function strokeUpdate(event) {
   removeCSS("stroke");
-  if ($stroke.val() == "0") return;
-  else {
-    let stroke = strokes[Number($stroke.val()) - 1];
-    appendCSS("stroke", stroke);
+
+  if ($stroke.val() == "0") {
+    return;
   }
+
+  let stroke = strokes[Number($stroke.val()) - 1];
+  appendCSS("stroke", stroke);
 }
 
 function shadowUpdate(event) {
   removeCSS("shadow");
-  if ($shadow.val() == "0") return;
-  else {
-    let shadow = shadows[Number($shadow.val()) - 1];
-    appendCSS("shadow", shadow);
+
+  if ($shadow.val() == "0") {
+    return;
   }
+
+  let shadow = shadows[Number($shadow.val()) - 1];
+  appendCSS("shadow", shadow);
 }
 
 function badgesUpdate(event) {
@@ -54,11 +58,45 @@ function capsUpdate(event) {
   }
 }
 
+function forceColorUpdate(event) {
+  const $nick = $("#example .nick");
+
+  if ($force_color_bool.is(":checked")) {
+    $nick.css("color", $force_color.val());
+  } else {
+    $nick.css("color", defaultNickColor);
+  }
+}
+
+function getOverlayBaseUrl() {
+  return window.location.origin + "/v2/";
+}
+
+function getKickValue() {
+  if (!$kick_enabled.is(":checked")) {
+    return false;
+  }
+
+  const kickChannel = $kick_channel.val().trim();
+
+  if (kickChannel) {
+    return kickChannel;
+  }
+
+  return "true";
+}
+
 function generateURL(event) {
   event.preventDefault();
 
+  const channel = $channel.val().trim();
+
+  if (!channel) {
+    return;
+  }
+
   const generatedUrl =
-    "https://www.giambaj.it/twitch/jchat/v2/?channel=" + $channel.val();
+    getOverlayBaseUrl() + "?channel=" + encodeURIComponent(channel);
 
   let data = {
     size: $size.val(),
@@ -69,13 +107,24 @@ function generateURL(event) {
     hide_commands: $commands.is(":checked"),
     hide_badges: $badges.is(":checked"),
     animate: $animate.is(":checked"),
-    fade: $fade_bool.is(":checked") ? $fade.val() : false,
+    fade: $fade_bool.is(":checked") ? $fade.val().trim() : false,
     small_caps: $small_caps.is(":checked"),
+
+    kick: getKickValue(),
+    kick_room: $kick_room.val().trim() || false,
+
+    emoji: $emoji.val() || false,
+    cN: $force_color_bool.is(":checked") ? $force_color.val() : false,
+
+    block: $block.val().trim() || false,
+
+    ffz_room_badges: $ffz_room_badges.is(":checked"),
+    ffz_user_badges: $ffz_user_badges.is(":checked"),
   };
 
   const params = encodeQueryData(data);
 
-  $url.val(generatedUrl + "&" + params);
+  $url.val(generatedUrl + (params ? "&" + params : ""));
 
   $generator.addClass("hidden");
   $result.removeClass("hidden");
@@ -92,7 +141,14 @@ function changePreview(event) {
 }
 
 function copyUrl(event) {
-  navigator.clipboard.writeText($url.val());
+  const value = $url.val();
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(value);
+  } else {
+    $url.select();
+    document.execCommand("copy");
+  }
 
   $alert.css("visibility", "visible");
   $alert.css("opacity", "1");
@@ -100,6 +156,7 @@ function copyUrl(event) {
 
 function showUrl(event) {
   $alert.css("opacity", "0");
+
   setTimeout(function () {
     $alert.css("visibility", "hidden");
   }, 200);
@@ -107,19 +164,37 @@ function showUrl(event) {
 
 function resetForm(event) {
   $channel.val("");
+
+  $kick_enabled.prop("checked", false);
+  $kick_channel.val("");
+  $kick_room.val("");
+
   $size.val("3");
   $font.val("0");
   $stroke.val("0");
   $shadow.val("0");
+
   $bots.prop("checked", false);
   $commands.prop("checked", false);
   $badges.prop("checked", false);
   $animate.prop("checked", false);
+
   $fade_bool.prop("checked", false);
   $fade.addClass("hidden");
   $fade_seconds.addClass("hidden");
   $fade.val("30");
+
   $small_caps.prop("checked", false);
+
+  $emoji.val("");
+
+  $force_color_bool.prop("checked", false);
+  $force_color.val("#ffcc00");
+
+  $block.val("");
+
+  $ffz_room_badges.prop("checked", false);
+  $ffz_user_badges.prop("checked", false);
 
   sizeUpdate();
   fontUpdate();
@@ -127,15 +202,26 @@ function resetForm(event) {
   shadowUpdate();
   badgesUpdate();
   capsUpdate();
-  if ($example.hasClass("white")) changePreview();
+  forceColorUpdate();
+
+  if ($example.hasClass("white")) {
+    changePreview();
+  }
 
   $result.addClass("hidden");
   $generator.removeClass("hidden");
   showUrl();
 }
 
+const defaultNickColor = "rgb(38, 255, 0)";
+
 const $generator = $("form[name='generator']");
 const $channel = $('input[name="channel"]');
+
+const $kick_enabled = $('input[name="kick_enabled"]');
+const $kick_channel = $('input[name="kick_channel"]');
+const $kick_room = $('input[name="kick_room"]');
+
 const $animate = $('input[name="animate"]');
 const $bots = $('input[name="bots"]');
 const $fade_bool = $("input[name='fade_bool']");
@@ -144,10 +230,20 @@ const $fade_seconds = $("#fade_seconds");
 const $commands = $("input[name='commands']");
 const $small_caps = $("input[name='small_caps']");
 const $badges = $("input[name='badges']");
+
 const $size = $("select[name='size']");
 const $font = $("select[name='font']");
 const $stroke = $("select[name='stroke']");
 const $shadow = $("select[name='shadow']");
+const $emoji = $("select[name='emoji']");
+
+const $force_color_bool = $('input[name="force_color_bool"]');
+const $force_color = $('input[name="force_color"]');
+
+const $block = $('input[name="block"]');
+const $ffz_room_badges = $('input[name="ffz_room_badges"]');
+const $ffz_user_badges = $('input[name="ffz_user_badges"]');
+
 const $brightness = $("#brightness");
 const $example = $("#example");
 const $result = $("#result");
@@ -162,6 +258,10 @@ $stroke.change(strokeUpdate);
 $shadow.change(shadowUpdate);
 $small_caps.change(capsUpdate);
 $badges.change(badgesUpdate);
+
+$force_color_bool.change(forceColorUpdate);
+$force_color.change(forceColorUpdate);
+
 $generator.submit(generateURL);
 $brightness.click(changePreview);
 $url.click(copyUrl);
