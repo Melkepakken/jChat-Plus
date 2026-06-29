@@ -69,7 +69,7 @@ function getOverlayChannel(options) {
     return channel;
   }
 
-  return isPreview ? "Melkepakken" : "";
+  return isPreview ? "twitch" : "";
 }
 
 function getOverlayData(options) {
