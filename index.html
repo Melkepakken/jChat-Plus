@@ -191,64 +191,34 @@
       </div>
     </section>
 
-<section id="donation">
-  <span>
-    jChat+ is free and open source.<br />
-    If it helps your stream, feel free to support development through Kvalvik Studios.
-    <img class="emote" src="img/Okayge.png" />
-    <img class="emote" src="img/BeerTime.gif" />
-  </span>
+    <section id="donation">
+      <span>
+        jChat+ is free and open source.<br />
+        If it helps your stream, feel free to support development through
+        Kvalvik Studios.
+        <img class="emote" src="img/Okayge.png" />
+        <img class="emote" src="img/BeerTime.gif" />
+      </span>
 
-  <a
-    id="paypal"
-    href="https://www.paypal.com/donate/?hosted_button_id=268DLMTLTK4NU"
-    target="_blank"
-    rel="noopener noreferrer"
-  >
-    Donate
-  </a>
-</section>
-
-<script>
-  document.addEventListener("DOMContentLoaded", function () {
-    var paypalButton = document.getElementById("paypal");
-
-    if (!paypalButton) {
-      return;
-    }
-
-    paypalButton.addEventListener("click", function (event) {
-      event.preventDefault();
-
-      var url = paypalButton.href;
-      var width = 520;
-      var height = 720;
-      var left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
-      var top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
-
-      var popup = window.open(
-        url,
-        "jchatPlusDonate",
-        "popup=yes,width=" +
-          width +
-          ",height=" +
-          height +
-          ",left=" +
-          left +
-          ",top=" +
-          top +
-          ",resizable=yes,scrollbars=yes"
-      );
-
-      if (!popup) {
-        window.open(url, "_blank", "noopener,noreferrer");
-        return;
-      }
-
-      popup.focus();
-    });
-  });
-</script>
+      <div id="donate-button-container">
+        <div id="donate-button"></div>
+        <script
+          src="https://www.paypalobjects.com/donate/sdk/donate-sdk.js"
+          charset="UTF-8"
+        ></script>
+        <script>
+          PayPal.Donation.Button({
+            env: "production",
+            hosted_button_id: "268DLMTLTK4NU",
+            image: {
+              src: "https://www.paypalobjects.com/en_US/i/btn/btn_donate_SM.gif",
+              alt: "Donate with PayPal button",
+              title: "PayPal - The safer, easier way to pay online!",
+            },
+          }).render("#donate-button");
+        </script>
+      </div>
+    </section>
 
     <footer>
       <p>
