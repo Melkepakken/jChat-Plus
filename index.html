@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
   <head>
-    <title>jChat+ &bull; Setup | giambaJ</title>
+    <title>jChat+ &bull; Twitch + Kick Chat Overlay</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100;300;400;500;700&display=swap"
@@ -35,17 +35,21 @@
 
     <section>
       <p>
-        <em>jChat+</em> is an overlay that allows you to show your Twitch and Kick chat on
-        screen with OBS, XSplit, Meld, StreamLabs OBS and any other streaming software that supports
-        browser sources. It supports your
+        <em>jChat+</em> is a Twitch and Kick chat overlay for OBS, XSplit, Meld,
+        Streamlabs Desktop and any other streaming software that supports
+        browser sources. It supports
         <a href="https://betterttv.com/" target="_blank">BetterTTV</a>,
         <a href="https://www.frankerfacez.com/" target="_blank">FrankerFaceZ</a>
-        and <a href="https://7tv.app/" target="_blank">7TV</a> emotes, always at
-        the best available quality. You have many options to customize your
-        chat, like enabling a smooth animation for new messages, or fading old
-        ones after some time. If you have a chat full of !gamble addicts, you
-        can choose to hide bots and commands messages. It also comes with many
-        fonts and styling options that can be combined as desired.
+        and <a href="https://7tv.app/" target="_blank">7TV</a> emotes, Twitch
+        badges, Kick badges, Kick emotes, smooth message animation, message
+        fading, custom fonts, shadows, strokes and more.
+      </p>
+
+      <p>
+        Use this setup page to generate a browser source URL. Add
+        <code>&amp;kick=true</code> to the generated URL if your Kick channel
+        uses the same name as your Twitch channel, or use
+        <code>&amp;kick=yourkickchannel</code> for a specific Kick channel.
       </p>
 
       <form name="generator">
@@ -153,7 +157,7 @@
                   class="badge"
                   src="https://static-cdn.jtvnw.net/badges/v1/3158e758-3cb4-43c5-94b3-7639810451c5/3"
                 /><span class="nick" style="color: rgb(38, 255, 0)"
-                  >giambaJ</span
+                  >Melkepakken</span
                 >
                 <span class="colon">:</span> </span
               ><span class="message"
@@ -187,36 +191,81 @@
       </div>
     </section>
 
-    <section id="donation">
-      <span
-        >This app is and will always be free.<br />If you like it and want to
-        support, feel free to buy me a beer
-        <img class="emote" src="img/Okayge.png" /><img
-          class="emote"
-          src="img/BeerTime.gif"
-      /></span>
-      <form action="https://www.paypal.com/donate" method="post" target="_top">
-        <input type="hidden" name="hosted_button_id" value="SRGWJ9QMHMHUG" />
-        <input
-          id="paypal"
-          type="submit"
-          title="PayPal - The safer, easier way to pay online!"
-          alt="Donate with PayPal button"
-          value="Donate"
-        />
-      </form>
-    </section>
+<section id="donation">
+  <span>
+    jChat+ is free and open source.<br />
+    If it helps your stream, feel free to support development through Kvalvik Studios.
+    <img class="emote" src="img/Okayge.png" />
+    <img class="emote" src="img/BeerTime.gif" />
+  </span>
+
+  <a
+    id="paypal"
+    href="https://www.paypal.com/donate/?hosted_button_id=268DLMTLTK4NU"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    Donate
+  </a>
+</section>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var paypalButton = document.getElementById("paypal");
+
+    if (!paypalButton) {
+      return;
+    }
+
+    paypalButton.addEventListener("click", function (event) {
+      event.preventDefault();
+
+      var url = paypalButton.href;
+      var width = 520;
+      var height = 720;
+      var left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
+      var top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
+
+      var popup = window.open(
+        url,
+        "jchatPlusDonate",
+        "popup=yes,width=" +
+          width +
+          ",height=" +
+          height +
+          ",left=" +
+          left +
+          ",top=" +
+          top +
+          ",resizable=yes,scrollbars=yes"
+      );
+
+      if (!popup) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      popup.focus();
+    });
+  });
+</script>
 
     <footer>
       <p>
-        Made with &#10084; by <a href="mailto:support@melkepakken.tv">Melkepakken</a>
+        Made with &#10084; by
+        <a href="mailto:support@melkepakken.tv">Melkepakken</a>
         <a href="https://github.com/melkepakken/jchat-plus" target="_blank"
           ><img class="github" src="img/github.png"
         /></a>
       </p>
       <p>
         This application is not affiliated with
-        <a href="https://www.twitch.tv/" target="_blank">Twitch</a>
+        <a href="https://www.twitch.tv/" target="_blank">Twitch</a> or
+        <a href="https://kick.com/" target="_blank">Kick</a>.
+      </p>
+      <p>
+        Original jChat by
+        <a href="https://github.com/giambaJ/jChat" target="_blank">giambaJ</a>.
       </p>
     </footer>
   </body>
