@@ -350,26 +350,6 @@ input[type="button"]:hover {
     font-weight: 600;
 }
 
-#donation .donation_text {
-  margin: 0 0 12px;
-  line-height: 1.35;
-}
-
-#donation .donation_emote {
-  display: inline-block;
-  vertical-align: middle;
-  margin-left: 4px;
-}
-
-#donation #donation_form {
-  margin: 0;
-}
-
-#donation #donation_form input[type="image"] {
-  display: inline-block;
-  border: 0;
-}
-
 footer {
     width: 100%;
     margin-top: auto;
