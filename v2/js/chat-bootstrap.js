@@ -1,6 +1,6 @@
 $(document).ready(function () {
   Chat.connect(
-    $.QueryString.channel ? $.QueryString.channel.toLowerCase() : "giambaj",
+    $.QueryString.channel ? $.QueryString.channel.toLowerCase() : "twitch",
   );
 });
 
