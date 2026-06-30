@@ -1,171 +1,374 @@
-function fadeOption(event) {
-    if ($fade_bool.is(':checked')) {
-        $fade.removeClass('hidden');
-        $fade_seconds.removeClass('hidden');
-    } else {
-        $fade.addClass('hidden');
-        $fade_seconds.addClass('hidden');
+const HOSTED_OVERLAY_BASE_URL = "https://chat.melkepakken.tv/v2/";
+
+let previewFrameLoaded = false;
+let previewUpdateTimer = null;
+let alertTimer = null;
+let generateButtonTimer = null;
+
+function fadeOption() {
+  if ($fade_bool.is(":checked")) {
+    $fade.removeClass("hidden");
+    $fade_seconds.removeClass("hidden");
+  } else {
+    $fade.addClass("hidden");
+    $fade_seconds.addClass("hidden");
+  }
+}
+
+function kickOption() {
+  if ($kick_enabled.is(":checked")) {
+    $kick_channel_row.removeClass("hidden");
+  } else {
+    $kick_channel_row.addClass("hidden");
+    $kick_channel.val("");
+  }
+}
+
+function advancedOption() {
+  const rows = $advanced_block_row
+    .add($advanced_ffz_room_row)
+    .add($advanced_ffz_user_row);
+
+  if ($advanced_enabled.is(":checked")) {
+    rows.removeClass("hidden");
+  } else {
+    rows.addClass("hidden");
+  }
+}
+
+function forceColorOption() {
+  if ($force_color_bool.is(":checked")) {
+    $force_color_row.removeClass("hidden");
+  } else {
+    $force_color_row.addClass("hidden");
+  }
+}
+
+function getKickValue() {
+  if (!$kick_enabled.is(":checked")) {
+    return false;
+  }
+
+  const kickChannel = $kick_channel.val().trim();
+
+  if (kickChannel) {
+    return kickChannel;
+  }
+
+  return "true";
+}
+
+function getOverlayChannel(options) {
+  const isPreview = options && options.preview;
+  const channel = $channel.val().trim();
+
+  if (channel) {
+    return channel;
+  }
+
+  return isPreview ? "twitch" : "";
+}
+
+function getOverlayData(options) {
+  const isPreview = options && options.preview;
+
+  return {
+    size: $size.val(),
+    font: $font.val(),
+    stroke: $stroke.val() !== "0" ? $stroke.val() : false,
+    shadow: $shadow.val() !== "0" ? $shadow.val() : false,
+    bots: $bots.is(":checked"),
+    hide_commands: $commands.is(":checked"),
+    hide_badges: !$all_badges.is(":checked") && $badges.is(":checked"),
+    hide_all_badges: $all_badges.is(":checked"),
+    animate: $animate.is(":checked"),
+    fade: $fade_bool.is(":checked") ? $fade.val().trim() : false,
+    small_caps: $small_caps.is(":checked"),
+    kick: getKickValue(),
+    emoji: $emoji.val() || false,
+    seventv_paints: $seventv_paints.is(":checked"),
+    cN: $force_color_bool.is(":checked") ? $force_color.val() : false,
+    block: $block.val().trim() || false,
+    ffz_room_badges: $ffz_room_badges.is(":checked"),
+    ffz_user_badges: $ffz_user_badges.is(":checked"),
+    preview: isPreview ? "true" : false,
+  };
+}
+
+function buildOverlayQuery(options) {
+  const channel = getOverlayChannel(options);
+  const data = getOverlayData(options);
+  const params = encodeQueryData(data);
+
+  return (
+    "channel=" + encodeURIComponent(channel) + (params ? "&" + params : "")
+  );
+}
+
+function buildHostedOverlayUrl() {
+  return HOSTED_OVERLAY_BASE_URL + "?" + buildOverlayQuery({ preview: false });
+}
+
+function buildPreviewOverlayUrl() {
+  return "v2/?" + buildOverlayQuery({ preview: true });
+}
+
+function postPreviewSettings() {
+  const iframe = $overlay_preview[0];
+
+  if (!iframe || !iframe.contentWindow) {
+    return;
+  }
+
+  iframe.contentWindow.postMessage(
+    {
+      type: "jchat_plus_preview_settings",
+      query: buildOverlayQuery({ preview: true }),
+    },
+    window.location.origin,
+  );
+}
+
+function updateOverlayPreview(options) {
+  clearTimeout(previewUpdateTimer);
+
+  previewUpdateTimer = setTimeout(function () {
+    if (!previewFrameLoaded || (options && options.forceSrc)) {
+      previewFrameLoaded = false;
+      $overlay_preview.attr("src", buildPreviewOverlayUrl());
+      return;
     }
-}
 
-function sizeUpdate(event) {
-    let size = sizes[Number($size.val()) - 1];
-    removeCSS('size');
-    appendCSS('size', size);
-}
-
-function fontUpdate(event) {
-    let font = fonts[Number($font.val())];
-    removeCSS('font');
-    appendCSS('font', font);
-}
-
-function strokeUpdate(event) {
-    removeCSS('stroke');
-    if ($stroke.val() == "0")
-        return;
-    else {
-        let stroke = strokes[Number($stroke.val()) - 1];
-        appendCSS('stroke', stroke);
-    }
-}
-
-function shadowUpdate(event) {
-    removeCSS('shadow');
-    if ($shadow.val() == "0")
-        return;
-    else {
-        let shadow = shadows[Number($shadow.val()) - 1];
-        appendCSS('shadow', shadow);
-    }
-}
-
-function badgesUpdate(event) {
-    if ($badges.is(':checked')) {
-        $('img[class="badge special"]').addClass('hidden');
-    } else {
-        $('img[class="badge special hidden"]').removeClass('hidden');
-    }
-}
-
-function capsUpdate(event) {
-    if ($small_caps.is(':checked')) {
-        appendCSS('variant', 'SmallCaps');
-    } else {
-        removeCSS('variant');
-    }
+    postPreviewSettings();
+  }, 80);
 }
 
 function generateURL(event) {
-    event.preventDefault();
+  event.preventDefault();
 
-    const generatedUrl = 'https://www.giambaj.it/twitch/jchat/v2/?channel=' + $channel.val();
+  const channel = $channel.val().trim();
 
-    let data = {
-        size: $size.val(),
-        font: $font.val(),
-        stroke: ($stroke.val() != '0' ? $stroke.val() : false),
-        shadow: ($shadow.val() != '0' ? $shadow.val() : false),
-        bots: $bots.is(':checked'),
-        hide_commands: $commands.is(':checked'),
-        hide_badges: $badges.is(':checked'),
-        animate: $animate.is(':checked'),
-        fade: ($fade_bool.is(':checked') ? $fade.val() : false),
-        small_caps: $small_caps.is(':checked')
-    };
+  if (!channel) {
+    showAlert("Enter a Twitch channel first");
+    return;
+  }
 
-    const params = encodeQueryData(data);
+  $url.val(buildHostedOverlayUrl());
+  $result.removeClass("hidden");
+  $url_status.text("Click the URL to copy it.");
 
-    $url.val(generatedUrl + '&' + params);
+  showAlert("URL generated");
 
-    $generator.addClass('hidden');
-    $result.removeClass('hidden');
+  clearTimeout(generateButtonTimer);
+  $submit.val("Generated ✓");
+
+  generateButtonTimer = setTimeout(function () {
+    $submit.val("Generate URL");
+  }, 1600);
 }
 
-function changePreview(event) {
-    if ($example.hasClass("white")) {
-        $example.removeClass("white");
-        $brightness.attr('src', "img/light.png");
-    } else {
-        $example.addClass("white");
-        $brightness.attr('src', "img/dark.png");
-    }
+function changePreview() {
+  if ($preview_container.hasClass("white")) {
+    $preview_container.removeClass("white");
+    $brightness.attr("src", "img/light.png");
+  } else {
+    $preview_container.addClass("white");
+    $brightness.attr("src", "img/dark.png");
+  }
 }
 
-function copyUrl(event) {
-    navigator.clipboard.writeText($url.val());
+function copyUrl() {
+  const value = $url.val();
 
-    $alert.css('visibility', 'visible');
-    $alert.css('opacity', '1');
+  if (!value) {
+    return;
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(value);
+  } else {
+    $url.select();
+    document.execCommand("copy");
+  }
+
+  showAlert("Copied to clipboard");
 }
 
-function showUrl(event) {
-    $alert.css('opacity', '0');
-    setTimeout(function() {
-        $alert.css('visibility', 'hidden');
-    }, 200);
+function showAlert(message) {
+  clearTimeout(alertTimer);
+
+  $alert.text(message);
+  $alert.css("visibility", "visible");
+  $alert.css("opacity", "1");
+
+  alertTimer = setTimeout(hideAlert, 2400);
 }
 
-function resetForm(event) {
-    $channel.val('');
-    $size.val('3');
-    $font.val('0');
-    $stroke.val('0');
-    $shadow.val('0');
-    $bots.prop('checked', false);
-    $commands.prop('checked', false);
-    $badges.prop('checked', false);
-    $animate.prop('checked', false);
-    $fade_bool.prop('checked', false);
-    $fade.addClass('hidden');
-    $fade_seconds.addClass('hidden');
-    $fade.val("30");
-    $small_caps.prop('checked', false);
+function hideAlert() {
+  $alert.css("opacity", "0");
 
-    sizeUpdate();
-    fontUpdate();
-    strokeUpdate();
-    shadowUpdate();
-    badgesUpdate();
-    capsUpdate();
-    if ($example.hasClass("white"))
-        changePreview();
+  setTimeout(function () {
+    $alert.css("visibility", "hidden");
+  }, 200);
+}
 
-    $result.addClass('hidden');
-    $generator.removeClass('hidden');
-    showUrl();
+function resetForm() {
+  clearTimeout(alertTimer);
+  clearTimeout(generateButtonTimer);
+
+  $channel.val("");
+
+  $size.val("2");
+  $font.val("0");
+  $emoji.val("");
+  $seventv_paints.prop("checked", false);
+  $stroke.val("0");
+  $shadow.val("0");
+
+  $bots.prop("checked", true);
+  $commands.prop("checked", false);
+  $badges.prop("checked", false);
+  $all_badges.prop("checked", false);
+
+  $kick_enabled.prop("checked", true);
+  $kick_channel.val("");
+
+  $animate.prop("checked", true);
+  $fade_bool.prop("checked", false);
+  $fade.val("30");
+  $fade.addClass("hidden");
+  $fade_seconds.addClass("hidden");
+
+  $small_caps.prop("checked", false);
+
+  $force_color_bool.prop("checked", false);
+  $force_color.val("#ffcc00");
+
+  $advanced_enabled.prop("checked", false);
+  $block.val("");
+  $ffz_room_badges.prop("checked", false);
+  $ffz_user_badges.prop("checked", false);
+
+  kickOption();
+  advancedOption();
+  forceColorOption();
+  fadeOption();
+
+  if ($preview_container.hasClass("white")) {
+    $preview_container.removeClass("white");
+    $brightness.attr("src", "img/light.png");
+  }
+
+  $result.addClass("hidden");
+  $url.val("");
+  $url_status.text("URL generated. Click the field to copy it.");
+  $submit.val("Generate URL");
+
+  hideAlert();
+
+  updateOverlayPreview({ forceSrc: true });
+}
+
+function schedulePreviewUpdate() {
+  updateOverlayPreview();
+}
+
+function markUrlStale() {
+  if (!$result.hasClass("hidden") && $url.val()) {
+    $url_status.text("Settings changed. Generate again for a fresh URL.");
+  }
 }
 
 const $generator = $("form[name='generator']");
 const $channel = $('input[name="channel"]');
-const $animate = $('input[name="animate"]');
+
+const $size = $("select[name='size']");
+const $font = $("select[name='font']");
+const $emoji = $("select[name='emoji']");
+const $seventv_paints = $('input[name="seventv_paints"]');
+const $stroke = $("select[name='stroke']");
+const $shadow = $("select[name='shadow']");
+
 const $bots = $('input[name="bots"]');
+const $commands = $("input[name='commands']");
+const $badges = $("input[name='badges']");
+const $all_badges = $("input[name='all_badges']");
+
+const $kick_enabled = $('input[name="kick_enabled"]');
+const $kick_channel = $('input[name="kick_channel"]');
+const $kick_channel_row = $("#kick_channel_row");
+
+const $animate = $('input[name="animate"]');
 const $fade_bool = $("input[name='fade_bool']");
 const $fade = $("input[name='fade']");
 const $fade_seconds = $("#fade_seconds");
-const $commands = $("input[name='commands']");
 const $small_caps = $("input[name='small_caps']");
-const $badges = $("input[name='badges']");
-const $size = $("select[name='size']");
-const $font = $("select[name='font']");
-const $stroke = $("select[name='stroke']");
-const $shadow = $("select[name='shadow']");
+
+const $force_color_bool = $('input[name="force_color_bool"]');
+const $force_color = $('input[name="force_color"]');
+const $force_color_row = $("#force_color_row");
+
+const $advanced_enabled = $('input[name="advanced_enabled"]');
+const $block = $('input[name="block"]');
+const $ffz_room_badges = $('input[name="ffz_room_badges"]');
+const $ffz_user_badges = $('input[name="ffz_user_badges"]');
+const $advanced_block_row = $("#advanced_block_row");
+const $advanced_ffz_room_row = $("#advanced_ffz_room_row");
+const $advanced_ffz_user_row = $("#advanced_ffz_user_row");
+
 const $brightness = $("#brightness");
-const $example = $('#example');
+const $preview_container = $("#preview_container");
+const $overlay_preview = $("#overlay_preview");
 const $result = $("#result");
-const $url = $('#url');
+const $url = $("#url");
+const $url_status = $("#url_status");
 const $alert = $("#alert");
 const $reset = $("#reset");
+const $submit = $('input[type="submit"]');
 
-$fade_bool.change(fadeOption);
-$size.change(sizeUpdate);
-$font.change(fontUpdate);
-$stroke.change(strokeUpdate);
-$shadow.change(shadowUpdate);
-$small_caps.change(capsUpdate);
-$badges.change(badgesUpdate);
+$fade_bool.change(function () {
+  fadeOption();
+  schedulePreviewUpdate();
+});
+
+$kick_enabled.change(function () {
+  kickOption();
+  schedulePreviewUpdate();
+});
+
+$advanced_enabled.change(function () {
+  advancedOption();
+});
+
+$force_color_bool.change(function () {
+  forceColorOption();
+  schedulePreviewUpdate();
+});
+
+const $url_only_inputs = $channel.add($kick_channel);
+const $preview_ignored_inputs = $url_only_inputs.add($advanced_enabled);
+
+$generator
+  .find("input, select")
+  .not($preview_ignored_inputs)
+  .on("input change", function () {
+    schedulePreviewUpdate();
+    markUrlStale();
+  });
+
+$url_only_inputs.on("input", markUrlStale);
+
+$overlay_preview.on("load", function () {
+  previewFrameLoaded = true;
+  postPreviewSettings();
+});
+
 $generator.submit(generateURL);
 $brightness.click(changePreview);
 $url.click(copyUrl);
-$alert.click(showUrl);
 $reset.click(resetForm);
+
+kickOption();
+advancedOption();
+forceColorOption();
+updateOverlayPreview({ forceSrc: true });

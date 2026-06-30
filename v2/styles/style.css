@@ -26,6 +26,40 @@ body {
     border-radius: 10%;
 }
 
+#chat_container .nick.seventv_name_paint {
+    display: inline-block;
+    text-shadow: none !important;
+    -webkit-text-stroke: 0 !important;
+    background-clip: text;
+    -webkit-background-clip: text;
+}
+
+.kick_badge {
+    display: inline-block;
+    height: 1em;
+    width: auto;
+    min-width: 0;
+    margin: 0 0.08em 0 0;
+    padding: 0;
+    border: 0;
+    vertical-align: middle;
+    line-height: 1;
+    background: transparent;
+    text-shadow: none;
+}
+
+.kick_badge_level,
+.kick_badge_founder {
+    border-radius: 999px;
+}
+
+.kick_badge_staff,
+.kick_badge_sidekick,
+.kick_badge_bot,
+.kick_badge_unknown {
+    border-radius: 10%;
+}
+
 .zero-width_container {
     display: inline-flex;
     align-items: center;
@@ -35,7 +69,8 @@ body {
 
 .cheer_bits {
     font-size: 0.6em;
-    -webkit-text-stroke: 1px black;
+    -webkit-text-stroke: 0;
+    text-shadow: none;
 }
 
 .emote {

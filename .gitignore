@@ -2,3 +2,9 @@ credentials.js
 backups/
 t/
 .vscode
+
+v2/credentials.js
+.dev.vars
+.dev.vars.*
+.env
+.env.*

@@ -1,15 +1,364 @@
-# [![](https://www.giambaj.it/twitch/jchat/img/peepoHappysmall.png)](#) jChat [![GitHub version](https://img.shields.io/badge/release-v2.3.4-blue)](#) [![Website giambaj.it](https://img.shields.io/website-up-down-green-red/https/giambaj.it.svg)](https://www.giambaj.it/twitch/jchat/) [![GitHub license](https://img.shields.io/github/license/giambaJ/jChat)](https://github.com/giambaJ/jChat/blob/main/LICENSE)
+# [![](https://chat.melkepakken.tv/img/peepoHappy_plus_small.png)](#) jChat+
 
-**jChat** is an overlay that allows you to show your Twitch chat on screen with OBS, XSplit, and any other streaming software that supports browser sources. It supports your [**BetterTTV**](https://betterttv.com/), [**FrankerFaceZ**](https://www.frankerfacez.com/) and [**7TV**](https://7tv.app/) emotes, always at the best available quality. You have many options to customize your chat, like enabling a smooth animation for new messages, or fading old ones after some time. If you have a chat full of !gamble addicts, you can choose to hide bots and commands messages. It also comes with many fonts and styling options that can be combined as desired.
-### The app is up and running on the [**website**](https://www.giambaj.it/twitch/jchat/).
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue)](#)
+[![Website](https://img.shields.io/website-up-down-green-red/https/chat.melkepakken.tv.svg)](https://chat.melkepakken.tv/)
+[![License](https://img.shields.io/github/license/Melkepakken/jchat-plus)](LICENSE)
+
+**jChat+** is a modernized fork of [jChat](https://github.com/giambaJ/jChat) with Twitch + Kick support, updated Twitch integrations, preview mode, improved badge and emote handling, 7TV cosmetics, emoji rendering options, username color controls, and streamer-focused customization.
+
+The public hosted version is available at:
+
+```txt
+https://chat.melkepakken.tv/
+```
+
+This project is based on the original jChat by **giambaJ**. Huge credit to the original project.
+
+---
+
 ## Features
-- 7TV, BTTV and FFZ emotes support
-- Custom channel badges
-- Lots of fonts and styling options
-- Twitter emojis
-- 7TV, BTTV, FFZ, FFZ:AP and Chatterino user badges (on/off)
-- Smooth animation (on/off)
-- Fade old messages (on/off)
-- Hide bots messages (on/off)
-- Hide commands messages (on/off)
-- !refreshoverlay to make newly added emotes appear (mods only)
+
+### jChat+ additions
+
+* Twitch + Kick chat support in one overlay
+* New setup page for generating overlay URLs
+* Preview mode for testing appearance and behavior without needing live chat
+* Kick channel auto-resolve with `kick=true`, `kick=<channel>`, or `kick_channel=<channel>`
+* Manual Kick chatroom override with `kick_room=<roomId>`
+* Kick message deletion support
+* Kick emote support
+* Kick badge support
+
+  * `badges_v2` image badges
+  * custom subscriber badges when available from Kick channel data
+  * fallback SVG badges for common Kick roles
+  * global level badges
+* `!reloadchat` support from Kick broadcaster/moderator messages
+* Toggle between native OS/browser emoji and pinned Twemoji
+* Force all usernames to one custom color with `cN`
+* Expanded list of known bots to filter out
+* Hide all badges
+* Block specific usernames
+* Updated Twitch Helix user, badge, and cheermote handling
+* Updated BTTV, FFZ, and 7TV emote loading
+* 7TV name paint support
+* 7TV user badge/cosmetic support
+* Fixed optional legacy FFZ room and user badge lookups
+* Cloudflare Pages Function support for public Twitch Helix proxying
+* Modular v2 code structure using plain browser scripts
+
+### Original jChat features
+
+* Twitch chat overlay
+* 7TV, BetterTTV, and FrankerFaceZ emote support
+* Custom channel badges
+* Multiple fonts and styling options
+* Smooth message animation
+* Fade old messages
+* Hide bot messages
+* Hide command messages
+* `!reloadchat` from Twitch mods
+
+---
+
+## Hosted usage
+
+Use the setup page:
+
+```txt
+https://chat.melkepakken.tv/
+```
+
+Or add the overlay URL directly as a browser source in OBS, XSplit, Meld, Streamlabs Desktop, or any other streaming software that supports browser sources.
+
+### Twitch only
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel
+```
+
+### Twitch + Kick with the same channel name
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick=true
+```
+
+### Twitch + specific Kick channel
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick=yourkickchannel
+```
+
+### Manual Kick room ID fallback
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick_room=3180237
+```
+
+### Preview mode
+
+Preview mode can be used to test the overlay without relying on live chat messages.
+
+```txt
+https://chat.melkepakken.tv/v2/?preview=true&channel=twitch&kick=kick&size=3&font=0&shadow=2&animate=true
+```
+
+The neutral preview values are intentionally:
+
+```txt
+channel=twitch
+kick=kick
+```
+
+This lets Twitch preview messages use the official `twitch` channel and Kick preview messages use the official `kick` channel.
+
+### Example OBS URL
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=melkepakken&kick=true&size=3&font=0&shadow=2&animate=true&emoji=twemoji
+```
+
+When testing new deployments in OBS, add a cache-busting value:
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=melkepakken&kick=true&size=3&font=0&shadow=2&animate=true&v=1
+```
+
+Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showing an old version.
+
+---
+
+## Self-hosting
+
+jChat+ is a static browser-based overlay.
+
+Run it locally with a simple static server:
+
+```bash
+python -m http.server 3000
+```
+
+Then open:
+
+```txt
+http://localhost:3000/v2/?channel=yourtwitchchannel
+```
+
+For OBS, add the URL as a **Browser Source**.
+
+No build step is required.
+
+---
+
+## Twitch credentials for local/self-hosted use
+
+The hosted version at `chat.melkepakken.tv` uses a Cloudflare proxy for Twitch Helix requests.
+
+For local/self-hosted use, you can still use a local credentials file.
+
+Copy:
+
+```txt
+v2/credentials[example].js
+```
+
+to:
+
+```txt
+v2/credentials.js
+```
+
+Use this format:
+
+```js
+var client_id = "YOUR_TWITCH_CLIENT_ID";
+var oauth_token = "YOUR_TWITCH_APP_ACCESS_TOKEN";
+```
+
+Do **not** commit `v2/credentials.js`.
+
+The variable names are intentionally lowercase because the current jChat+ Twitch helper expects:
+
+```js
+client_id
+oauth_token
+```
+
+### Getting an app access token
+
+Create a Twitch application in the Twitch Developer Console, then use your Client ID and Client Secret to generate an app access token.
+
+Example:
+
+```bash
+curl -X POST "https://id.twitch.tv/oauth2/token?client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET&grant_type=client_credentials"
+```
+
+The response contains an `access_token`. Use that value as `oauth_token`.
+
+Never commit or publish your Client Secret.
+
+---
+
+## Cloudflare Pages deployment
+
+The public deployment uses:
+
+```txt
+Cloudflare Pages
+chat.melkepakken.tv
+/functions/api/twitch/[[path]].js
+```
+
+The Cloudflare Function proxies the Twitch Helix endpoints used by jChat+:
+
+```txt
+/api/twitch/users
+/api/twitch/chat/badges/global
+/api/twitch/chat/badges
+/api/twitch/bits/cheermotes
+```
+
+Required Cloudflare environment variables/secrets:
+
+```txt
+TWITCH_CLIENT_ID
+TWITCH_CLIENT_SECRET
+```
+
+`TWITCH_CLIENT_SECRET` must be saved as a secret.
+
+The frontend should never expose `TWITCH_CLIENT_SECRET`.
+
+---
+
+## Query parameters
+
+### Chat sources
+
+| Parameter      | Example               | Description                                           |
+| -------------- | --------------------- | ----------------------------------------------------- |
+| `channel`      | `channel=melkepakken` | Twitch channel                                        |
+| `kick`         | `kick=true`           | Resolve Kick channel using the same name as `channel` |
+| `kick`         | `kick=velcuz`         | Resolve a specific Kick channel                       |
+| `kick_channel` | `kick_channel=velcuz` | Alternative Kick channel parameter                    |
+| `kick_room`    | `kick_room=3180237`   | Manual Kick chatroom ID override                      |
+| `preview`      | `preview=true`        | Enable preview mode                                   |
+
+### Appearance
+
+| Parameter    | Example           | Description                      |
+| ------------ | ----------------- | -------------------------------- |
+| `size`       | `size=3`          | Chat size                        |
+| `font`       | `font=0`          | Font selection                   |
+| `stroke`     | `stroke=2`        | Text stroke level                |
+| `shadow`     | `shadow=2`        | Text shadow level                |
+| `animate`    | `animate=true`    | Enable smooth message animation  |
+| `fade`       | `fade=30`         | Fade messages after 30 seconds   |
+| `small_caps` | `small_caps=true` | Use small-caps styling           |
+| `cN`         | `cN=%23ffcc00`    | Force all usernames to one color |
+| `emoji`      | `emoji=twemoji`   | Use pinned Twemoji               |
+| `emoji`      | `emoji=native`    | Use native OS/browser emoji      |
+
+### Filtering
+
+| Parameter         | Example                | Description                                             |
+| ----------------- | ---------------------- | ------------------------------------------------------- |
+| `bots`            | `bots=true`            | Show bot messages                                       |
+| `hide_commands`   | `hide_commands=true`   | Hide command messages                                   |
+| `hide_badges`     | `hide_badges=true`     | Hide special/user badges, while keeping platform badges |
+| `hide_all_badges` | `hide_all_badges=true` | Hide all badges                                         |
+| `block`           | `block=user1,user2`    | Block specific usernames                                |
+
+### Emotes, badges, and cosmetics
+
+| Parameter         | Example                | Description                         |
+| ----------------- | ---------------------- | ----------------------------------- |
+| `seventv_paints`  | `seventv_paints=true`  | Enable 7TV name paints              |
+| `ffz_room_badges` | `ffz_room_badges=true` | Enable legacy FFZ room badge lookup |
+| `ffz_user_badges` | `ffz_user_badges=true` | Enable legacy FFZ user badge lookup |
+
+---
+
+## Kick support details
+
+jChat+ supports Kick chat through Kick’s public chat websocket events.
+
+Current Kick support includes:
+
+* Live chat messages
+* Kick emotes
+* Deleted messages
+* Broadcaster/moderator `!reloadchat`
+* Kick role badges
+* Kick global level badges
+* Custom subscriber badges when discoverable from channel data
+* Automatic Kick channel slug to chatroom ID resolution
+
+Known limitation:
+
+* Gift badge tiers are not fully mapped. jChat+ uses a default fallback gift badge unless Kick sends a direct image URL.
+
+---
+
+## v2 module structure
+
+The v2 overlay is split into plain browser scripts loaded directly from `v2/index.html`.
+
+There is no bundler, no ES modules, and no imports. Load order matters because each file extends the global `Chat` object.
+
+Main modules:
+
+| File                     | Purpose                                                               |
+| ------------------------ | --------------------------------------------------------------------- |
+| `preview-messages.js`    | Preview message data only                                             |
+| `js/chat-bots.js`        | Default hidden bot username list                                      |
+| `js/chat-core.js`        | Query parsing, shared state, and shared helpers                       |
+| `js/chat-twitch-api.js`  | Twitch API helper using local credentials or `/api/twitch`            |
+| `js/chat-styles.js`      | Overlay style loading and static style application                    |
+| `js/chat-preview.js`     | Preview mode, preview timing, and setup-page preview updates          |
+| `js/chat-emotes.js`      | BTTV, FFZ, and 7TV emote loading                                      |
+| `js/chat-seventv.js`     | 7TV badges, paints, cosmetics, gradients, and shadows                 |
+| `js/chat-badges.js`      | Generic badge helpers and user badge loading                          |
+| `js/chat-kick-badges.js` | Kick badge parsing, fallback badges, and subscriber badge caching     |
+| `js/chat-kick.js`        | Kick chat connection, delete handling, emote parsing, and `writeKick` |
+| `js/chat-loader.js`      | Twitch channel lookup and resource loading                            |
+| `js/chat-renderer.js`    | Chat line rendering and cleanup                                       |
+| `js/chat-twitch.js`      | Twitch IRC connection and message handling                            |
+| `js/chat-bootstrap.js`   | Overlay startup and preview message listener                          |
+
+`v2/script.js` is deleted and no longer used.
+
+---
+
+## Security notes
+
+Do not commit:
+
+```txt
+v2/credentials.js
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+```
+
+The hosted version should use Cloudflare secrets instead of frontend credentials.
+
+Forks of this project do not receive the original Cloudflare secrets. Anyone deploying their own version must provide their own Twitch app credentials.
+
+---
+
+## Credits
+
+jChat+ is a fork of the original [jChat](https://github.com/giambaJ/jChat) by **giambaJ**.
+
+Original project credit, structure, and core idea belong to giambaJ.
+
+jChat+ adds modernized Twitch integrations, Kick support, Cloudflare deployment support, preview mode, improved badge/emote handling, 7TV cosmetics, and additional streamer-focused customization.
+
+---
+
+## License
+
+This project follows the license of the original jChat project.
