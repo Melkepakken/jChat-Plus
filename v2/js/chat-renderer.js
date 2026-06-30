@@ -248,14 +248,14 @@
         if (info.bits && parseInt(info.bits) > 0) {
           var bits = parseInt(info.bits);
           var parsed = false;
-          for (cheerType of Object.entries(Chat.info.cheers)) {
+          for (const cheerType of Object.entries(Chat.info.cheers)) {
             var regex = new RegExp(cheerType[0] + "\\d+\\s*", "ig");
             if (message.search(regex) > -1) {
               message = message.replace(regex, "");
 
               if (!parsed) {
                 var closest = 1;
-                for (cheerTier of Object.keys(cheerType[1])
+                for (const cheerTier of Object.keys(cheerType[1])
                   .map(Number)
                   .sort((a, b) => a - b)) {
                   if (bits >= cheerTier) closest = cheerTier;
@@ -299,7 +299,7 @@
         $message.html(message);
 
         // Writing zero-width emotes
-        messageNodes = $message.children();
+        const messageNodes = $message.children();
         messageNodes.each(function (i) {
           if (
             i != 0 &&

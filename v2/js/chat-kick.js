@@ -182,10 +182,13 @@
 
       if (Chat.info.hideCommands && /^!.+/.test(content)) return;
 
-      if (!Chat.info.showBots && Chat.info.bots.includes(nick)) return;
-
-      if (Chat.info.blockedUsers && Chat.info.blockedUsers.includes(nick))
+      if (
+        !Chat.info.showBots &&
+        Chat.info.bots.includes(String(nick).toLowerCase())
+      )
         return;
+
+      if (Chat.isUserBlocked(nick)) return;
 
       var color = identity.color;
       if (

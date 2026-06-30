@@ -105,7 +105,10 @@
 
                   message.tags.badges.split(",").forEach((badge) => {
                     badge = badge.split("/");
-                    if (badge[0] === "moderator" || badge[0] === "broadcaster") {
+                    if (
+                      badge[0] === "moderator" ||
+                      badge[0] === "broadcaster"
+                    ) {
                       reloadFlag = true;
                       return;
                     }
@@ -122,12 +125,11 @@
                 }
 
                 if (!Chat.info.showBots) {
-                  if (Chat.info.bots.includes(nick)) return;
+                  if (Chat.info.bots.includes(String(nick).toLowerCase()))
+                    return;
                 }
 
-                if (Chat.info.blockedUsers) {
-                  if (Chat.info.blockedUsers.includes(nick)) return;
-                }
+                if (Chat.isUserBlocked(nick)) return;
 
                 function writeTwitchMessage() {
                   Chat.write(nick, message.tags, message.params[1]);
