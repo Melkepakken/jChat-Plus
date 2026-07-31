@@ -324,7 +324,7 @@ const $url = $("#url");
 const $url_status = $("#url_status");
 const $alert = $("#alert");
 const $reset = $("#reset");
-const $submit = $('input[type="submit"]');
+const $submit = $("#generate_url");
 
 $fade_bool.change(function () {
   fadeOption();
