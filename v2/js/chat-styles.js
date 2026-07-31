@@ -88,6 +88,38 @@
         );
       }
 
+      if (Chat.info.messageBox) {
+        var messageBoxBackgroundOffset =
+          Number(Chat.info.font) === 0 ? "-0.2em" : "0";
+
+        rules.push(
+          "#chat_container .chat_line {\n" +
+            "  margin-bottom: 4px;\n" +
+            "  line-height: 1.15 !important;\n" +
+            "  padding: 4px 8px;\n" +
+            "  border-radius: 8px;\n" +
+            "  display: block;\n" +
+            "  width: fit-content;\n" +
+            "  max-width: 100%;\n" +
+            "  box-sizing: border-box;\n" +
+            "  position: relative;\n" +
+            "  isolation: isolate;\n" +
+            "}\n" +
+            "#chat_container .chat_line::before {\n" +
+            '  content: "";\n' +
+            "  position: absolute;\n" +
+            "  inset: 0;\n" +
+            "  background-color: rgba(14, 14, 16, 0.706);\n" +
+            "  border-radius: 8px;\n" +
+            "  transform: translateY(" +
+            messageBoxBackgroundOffset +
+            ");\n" +
+            "  pointer-events: none;\n" +
+            "  z-index: -1;\n" +
+            "}",
+        );
+      }
+
       var shadows = strokeShadows(Chat.info.stroke).concat(
         normalShadows(Chat.info.shadow),
       );

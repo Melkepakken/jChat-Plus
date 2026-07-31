@@ -253,6 +253,7 @@
       Chat.info.shadow = params.has("shadow")
         ? parseInt(params.get("shadow"), 10)
         : false;
+      Chat.info.messageBox = truthy("message_box");
 
       Chat.info.animate = truthy("animate");
       Chat.info.showBots = truthy("bots");

@@ -253,6 +253,7 @@ The frontend should never expose `TWITCH_CLIENT_SECRET`.
 | `font`       | `font=0`          | Font selection                   |
 | `stroke`     | `stroke=2`        | Text stroke level                |
 | `shadow`     | `shadow=2`        | Text shadow level                |
+| `message_box` | `message_box=true` | Add a fitted background to each message |
 | `animate`    | `animate=true`    | Enable smooth message animation  |
 | `fade`       | `fade=30`         | Fade messages after 30 seconds   |
 | `small_caps` | `small_caps=true` | Use small-caps styling           |

@@ -89,6 +89,10 @@ $.extend(true, Chat, {
     font: "font" in $.QueryString ? parseInt($.QueryString.font) : 0,
     stroke: "stroke" in $.QueryString ? parseInt($.QueryString.stroke) : false,
     shadow: "shadow" in $.QueryString ? parseInt($.QueryString.shadow) : false,
+    messageBox:
+      "message_box" in $.QueryString
+        ? /^(1|true|yes)$/i.test($.QueryString.message_box)
+        : false,
     smallCaps:
       "small_caps" in $.QueryString
         ? $.QueryString.small_caps.toLowerCase() === "true"
