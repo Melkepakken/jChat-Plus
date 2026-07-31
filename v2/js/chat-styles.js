@@ -71,6 +71,13 @@
           return ["3px 3px 6px #000"];
         }
 
+        if (shadow === 4) {
+          return [
+            "2px 2px 2px rgba(0, 0, 0, 1)",
+            "0 0 6px rgba(0, 0, 0, 0.9)",
+          ];
+        }
+
         return [];
       }
 
@@ -93,7 +100,10 @@
           Number(Chat.info.font) === 0 ? "-0.2em" : "0";
 
         rules.push(
-          "#chat_container .chat_line {\n" +
+          "#chat_container {\n" +
+            "  padding: 6px;\n" +
+            "}\n" +
+            "#chat_container .chat_line {\n" +
             "  margin-bottom: 4px;\n" +
             "  line-height: 1.15 !important;\n" +
             "  padding: 4px 8px;\n" +
@@ -116,6 +126,19 @@
             ");\n" +
             "  pointer-events: none;\n" +
             "  z-index: -1;\n" +
+            "}",
+        );
+      }
+
+      if (Chat.info.emoteShadow) {
+        rules.push(
+          "#chat_container .emote,\n" +
+            "#chat_container .cheer_emote,\n" +
+            "#chat_container .cheer_bits,\n" +
+            "#chat_container .emoji {\n" +
+            "  filter:\n" +
+            "    drop-shadow(2px 2px 4px rgba(0, 0, 0, 1))\n" +
+            "    drop-shadow(-2px -2px 4px rgba(0, 0, 0, 1));\n" +
             "}",
         );
       }

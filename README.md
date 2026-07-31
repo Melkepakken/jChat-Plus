@@ -249,10 +249,10 @@ The frontend should never expose `TWITCH_CLIENT_SECRET`.
 
 | Parameter    | Example           | Description                      |
 | ------------ | ----------------- | -------------------------------- |
-| `size`       | `size=3`          | Chat size                        |
+| `size`       | `size=4`          | Large (38px); `size=3` remains Extra Large (48px) |
 | `font`       | `font=0`          | Font selection                   |
 | `stroke`     | `stroke=2`        | Text stroke level                |
-| `shadow`     | `shadow=2`        | Text shadow level                |
+| `shadow`     | `shadow=4`        | Layered Glow text shadow         |
 | `message_box` | `message_box=true` | Add a fitted background to each message |
 | `animate`    | `animate=true`    | Enable smooth message animation  |
 | `fade`       | `fade=30`         | Fade messages after 30 seconds   |
@@ -276,6 +276,7 @@ The frontend should never expose `TWITCH_CLIENT_SECRET`.
 | Parameter         | Example                | Description                         |
 | ----------------- | ---------------------- | ----------------------------------- |
 | `seventv_paints`  | `seventv_paints=true`  | Enable 7TV name paints              |
+| `emote_shadow`    | `emote_shadow=true`    | Add shadows to emotes, rendered emoji, and cheers |
 | `ffz_room_badges` | `ffz_room_badges=true` | Enable legacy FFZ room badge lookup |
 | `ffz_user_badges` | `ffz_user_badges=true` | Enable legacy FFZ user badge lookup |
 

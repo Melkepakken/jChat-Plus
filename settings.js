@@ -14,7 +14,7 @@ const fonts = [
   "Verdana",
 ];
 
-const sizes = ["small", "medium", "large"];
+const sizes = ["small", "medium", "large", "mediumlarge"];
 
 const strokes = ["thin", "medium", "thick", "thicker"];
 

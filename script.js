@@ -78,6 +78,7 @@ function getOverlayData(options) {
     stroke: $stroke.val() !== "0" ? $stroke.val() : false,
     shadow: $shadow.val() !== "0" ? $shadow.val() : false,
     message_box: $message_box.is(":checked"),
+    emote_shadow: $emote_shadow.is(":checked"),
     bots: $bots.is(":checked"),
     hide_commands: $commands.is(":checked"),
     hide_badges: !$all_badges.is(":checked") && $badges.is(":checked"),
@@ -226,6 +227,7 @@ function resetForm() {
   $stroke.val("0");
   $shadow.val("0");
   $message_box.prop("checked", false);
+  $emote_shadow.prop("checked", false);
 
   $bots.prop("checked", true);
   $commands.prop("checked", false);
@@ -291,6 +293,7 @@ const $seventv_paints = $('input[name="seventv_paints"]');
 const $stroke = $("select[name='stroke']");
 const $shadow = $("select[name='shadow']");
 const $message_box = $('input[name="message_box"]');
+const $emote_shadow = $('input[name="emote_shadow"]');
 
 const $bots = $('input[name="bots"]');
 const $commands = $("input[name='commands']");

@@ -93,6 +93,10 @@ $.extend(true, Chat, {
       "message_box" in $.QueryString
         ? /^(1|true|yes)$/i.test($.QueryString.message_box)
         : false,
+    emoteShadow:
+      "emote_shadow" in $.QueryString
+        ? /^(1|true|yes)$/i.test($.QueryString.emote_shadow)
+        : false,
     smallCaps:
       "small_caps" in $.QueryString
         ? $.QueryString.small_caps.toLowerCase() === "true"
