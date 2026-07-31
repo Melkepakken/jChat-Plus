@@ -11,6 +11,7 @@ const fonts = [
   "IndieFlower",
   "PressStart2P",
   "Wallpoet",
+  "Verdana",
 ];
 
 const sizes = ["small", "medium", "large"];
