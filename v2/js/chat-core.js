@@ -113,6 +113,11 @@ $.extend(true, Chat, {
     seventvBadgeCache: {},
     seventvPaintCache: {},
     seventvBadgeRequests: {},
+    seventvBadgeQueue: [],
+    seventvBadgeActiveRequests: 0,
+    seventvBadgeRequestLimit: 3,
+    seventvBadgeQueueLimit: 100,
+    seventvBadgeWarnings: {},
     seventvNamePaints:
       "seventv_paints" in $.QueryString
         ? /^(1|true|yes)$/i.test($.QueryString.seventv_paints)

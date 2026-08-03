@@ -454,13 +454,36 @@
       return Object.keys(css).length ? css : null;
     },
 
+    getSevenTvUserFromResponse: function (res) {
+      if (!res) return null;
+
+      if (res.data && res.data.users) {
+        if (
+          Object.prototype.hasOwnProperty.call(
+            res.data.users,
+            "userByConnection",
+          )
+        ) {
+          return res.data.users.userByConnection;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(res.data.users, "user")) {
+          return res.data.users.user;
+        }
+      }
+
+      return (
+        res.user ||
+        (res.id || res.style || res.badge || res.paint ? res : null)
+      );
+    },
+
     extractSevenTvActivePaint: function (res) {
       if (!res) return null;
 
-      var user =
-        res.data && res.data.users && res.data.users.user
-          ? res.data.users.user
-          : res.user || res;
+      var user = Chat.getSevenTvUserFromResponse(res);
+
+      if (!user) return null;
 
       var style = user.style || res.style || {};
       var paint = style.activePaint || null;
@@ -479,60 +502,75 @@
     },
 
     getSevenTvUserIdFromResponse: function (res) {
-      if (!res) return null;
+      var user = Chat.getSevenTvUserFromResponse(res);
 
-      var user = res.user || res;
+      if (!user) return null;
 
       return user.id || res.user_id || res.userId || res.id || null;
     },
 
-    loadSevenTvUserStyleV4: function (sevenTvUserId) {
+    requestSevenTvUserByTwitchId: function (userId, includeBadge, includePaint) {
       var request = $.Deferred();
 
-      sevenTvUserId = String(sevenTvUserId || "");
+      userId = String(userId || "");
 
-      if (!/^[0-9A-Z]+$/i.test(sevenTvUserId)) {
-        request.resolve(null);
+      if (!/^\d+$/.test(userId) || (!includeBadge && !includePaint)) {
+        request.reject({
+          kind: "invalid",
+        });
         return request.promise();
       }
 
+      var styleFields = [];
+
+      if (includePaint) {
+        styleFields.push(
+          "activePaintId",
+          "activePaint {" +
+            " id" +
+            " name" +
+            " data {" +
+            "   layers {" +
+            "     id" +
+            "     opacity" +
+            "     ty {" +
+            "       __typename" +
+            "       ... on PaintLayerTypeLinearGradient {" +
+            "         angle" +
+            "         repeating" +
+            "         stops { at color { hex } }" +
+            "       }" +
+            "       ... on PaintLayerTypeRadialGradient {" +
+            "         repeating" +
+            "         stops { at color { hex } }" +
+            "       }" +
+            "     }" +
+            "   }" +
+            "   shadows { color { hex } offsetX offsetY blur }" +
+            " }" +
+            "}",
+        );
+      }
+
+      if (includeBadge) {
+        styleFields.push(
+          "activeBadgeId",
+          "activeBadge {" +
+            " id" +
+            " name" +
+            " description" +
+            " images { url mime scale width height }" +
+            "}",
+        );
+      }
+
       var query =
-        "query jChatPlusSevenTvUserStyle($id: Id!) {" +
+        "query jChatPlusSevenTvUserByConnection($platformId: String!) {" +
         "  users {" +
-        "    user(id: $id) {" +
+        "    userByConnection(platform: TWITCH, platformId: $platformId) {" +
         "      id" +
         "      style {" +
-        "        activePaintId" +
-        "        activePaint {" +
-        "          id" +
-        "          name" +
-        "          data {" +
-        "            layers {" +
-        "              id" +
-        "              opacity" +
-        "              ty {" +
-        "                __typename" +
-        "                ... on PaintLayerTypeLinearGradient {" +
-        "                  angle" +
-        "                  repeating" +
-        "                  stops { at color { hex } }" +
-        "                }" +
-        "                ... on PaintLayerTypeRadialGradient {" +
-        "                  repeating" +
-        "                  stops { at color { hex } }" +
-        "                }" +
-        "              }" +
-        "            }" +
-        "            shadows { color { hex } offsetX offsetY blur }" +
-        "          }" +
-        "        }" +
-        "        activeBadgeId" +
-        "        activeBadge {" +
-        "          id" +
-        "          name" +
-        "          description" +
-        "          images { url mime scale width height }" +
-        "        }" +
+        styleFields.join(" ") +
         "      }" +
         "    }" +
         "  }" +
@@ -546,28 +584,43 @@
         contentType: "application/json",
         processData: false,
         data: JSON.stringify({
-          operationName: "jChatPlusSevenTvUserStyle",
+          operationName: "jChatPlusSevenTvUserByConnection",
           query: query,
           variables: {
-            id: sevenTvUserId,
+            platformId: userId,
           },
         }),
       })
         .done(function (res) {
-          if (res && res.errors) {
-            console.warn("jChat 7TV paint: GraphQL errors", res.errors);
+          if (res && Array.isArray(res.errors) && res.errors.length) {
+            request.reject({
+              kind: "graphql",
+              details: res.errors,
+            });
+            return;
           }
 
-          request.resolve(res || null);
+          var users = res && res.data ? res.data.users : null;
+
+          if (
+            !users ||
+            !Object.prototype.hasOwnProperty.call(users, "userByConnection")
+          ) {
+            request.reject({
+              kind: "malformed",
+              details: res,
+            });
+            return;
+          }
+
+          request.resolve(res);
         })
         .fail(function (xhr) {
-          console.warn(
-            "jChat 7TV paint: v4 GraphQL request failed",
-            xhr && xhr.status,
-            xhr && xhr.responseText,
-          );
-
-          request.resolve(null);
+          request.reject({
+            kind: "http",
+            status: xhr && xhr.status,
+            details: xhr && xhr.responseText,
+          });
         });
 
       return request.promise();
@@ -582,7 +635,7 @@
         return activePaint;
       }
 
-      var user = res.user || res;
+      var user = Chat.getSevenTvUserFromResponse(res) || res;
       var style = user.style || res.style || {};
 
       var paint =
@@ -667,9 +720,9 @@
     },
 
     getSevenTvUserIdFromResponse: function (res) {
-      if (!res) return null;
+      var user = Chat.getSevenTvUserFromResponse(res);
 
-      var user = res.user || res;
+      if (!user) return null;
 
       return user.id || res.user_id || res.userId || res.id || null;
     },
@@ -731,10 +784,9 @@
     extractSevenTvBadge: function (res) {
       if (!res) return null;
 
-      var user =
-        res.data && res.data.users && res.data.users.user
-          ? res.data.users.user
-          : res.user || res;
+      var user = Chat.getSevenTvUserFromResponse(res);
+
+      if (!user) return null;
 
       var style = user.style || res.style || {};
       var badge =
@@ -809,6 +861,139 @@
       };
     },
 
+    warnSevenTvUserLookupOnce: function (kind, message, details) {
+      if (Chat.info.seventvBadgeWarnings[kind]) return;
+
+      Chat.info.seventvBadgeWarnings[kind] = true;
+      console.warn("jChat 7TV cosmetics: " + message, details || "");
+    },
+
+    updateRenderedSevenTvCosmetics: function (userId, badge, paint) {
+      userId = String(userId || "");
+
+      var $lines = $(".chat_line").filter(function () {
+        return $(this).attr("data-user-id") === userId;
+      });
+
+      $lines.each(function () {
+        var $username = $(this).find(".user_info .nick").first();
+
+        if (!$username.length) return;
+
+        if (paint) {
+          Chat.applySevenTvNamePaint($username, userId);
+        }
+
+        if (badge && !Chat.info.hideBadges && !Chat.info.hideAllBadges) {
+          var $userInfo = $username.closest(".user_info");
+          var hasBadge = $userInfo.find("img.badge").filter(function () {
+            return $(this).attr("src") === badge.url;
+          }).length;
+
+          if (!hasBadge) {
+            var $badge = Chat.appendChatBadge($userInfo, badge);
+
+            if ($badge) {
+              $badge.attr("data-seventv-user-badge", userId);
+              $badge.insertBefore($username);
+            }
+          }
+        }
+      });
+
+      return $lines.length;
+    },
+
+    drainSevenTvUserBadgeQueue: function () {
+      var concurrency = Math.max(
+        1,
+        Number(Chat.info.seventvBadgeRequestLimit) || 3,
+      );
+
+      while (
+        Chat.info.seventvBadgeActiveRequests < concurrency &&
+        Chat.info.seventvBadgeQueue.length
+      ) {
+        var task = Chat.info.seventvBadgeQueue.shift();
+
+        Chat.info.seventvBadgeActiveRequests++;
+
+        (function (currentTask) {
+          function finish(badge, paint) {
+            if (currentTask.includeBadge) {
+              Chat.info.seventvBadgeCache[currentTask.userId] = badge || null;
+            }
+
+            if (currentTask.includePaint) {
+              Chat.info.seventvPaintCache[currentTask.userId] = paint || null;
+            }
+
+            if (badge) {
+              Chat.addUserBadge(currentTask.nick, badge);
+            }
+
+            if (
+              (badge || paint) &&
+              !Chat.updateRenderedSevenTvCosmetics(
+                currentTask.userId,
+                badge,
+                paint,
+              )
+            ) {
+              window.setTimeout(function () {
+                Chat.updateRenderedSevenTvCosmetics(
+                  currentTask.userId,
+                  badge,
+                  paint,
+                );
+              }, 400);
+            }
+
+            currentTask.request.resolve();
+          }
+
+          Chat.requestSevenTvUserByTwitchId(
+            currentTask.userId,
+            currentTask.includeBadge,
+            currentTask.includePaint,
+          )
+            .done(function (res) {
+              var user = Chat.getSevenTvUserFromResponse(res);
+
+              if (!user) {
+                finish(null, null);
+                return;
+              }
+
+              finish(
+                currentTask.includeBadge
+                  ? Chat.extractSevenTvBadge(res)
+                  : null,
+                currentTask.includePaint
+                  ? Chat.extractSevenTvPaint(res)
+                  : null,
+              );
+            })
+            .fail(function (error) {
+              Chat.warnSevenTvUserLookupOnce(
+                "service",
+                "lookup failed; cosmetics are disabled for affected users this session.",
+                error,
+              );
+              finish(null, null);
+            })
+            .always(function () {
+              Chat.info.seventvBadgeActiveRequests = Math.max(
+                0,
+                Chat.info.seventvBadgeActiveRequests - 1,
+              );
+              delete Chat.info.seventvBadgeRequests[currentTask.userId];
+              Chat.drainSevenTvUserBadgeQueue();
+            });
+        })(task);
+      }
+    },
+
     loadSevenTvUserBadge: function (nick, userId) {
       var resolved = $.Deferred().resolve().promise();
 
@@ -817,6 +1002,14 @@
       }
 
       userId = String(userId);
+
+      var includeBadge = !Chat.info.hideBadges && !Chat.info.hideAllBadges;
+      var includePaint =
+        Chat.info.seventvNamePaints && !Chat.info.nicknameColor;
+
+      if (!/^\d+$/.test(userId) || (!includeBadge && !includePaint)) {
+        return resolved;
+      }
 
       var hasBadgeCache = Object.prototype.hasOwnProperty.call(
         Chat.info.seventvBadgeCache,
@@ -828,10 +1021,13 @@
         userId,
       );
 
-      if (hasBadgeCache && (!Chat.info.seventvNamePaints || hasPaintCache)) {
+      if (
+        (!includeBadge || hasBadgeCache) &&
+        (!includePaint || hasPaintCache)
+      ) {
         var cachedBadge = Chat.info.seventvBadgeCache[userId];
 
-        if (cachedBadge) {
+        if (includeBadge && cachedBadge) {
           Chat.addUserBadge(nick, cachedBadge);
         }
 
@@ -842,7 +1038,7 @@
         return Chat.info.seventvBadgeRequests[userId].done(function () {
           var cachedBadge = Chat.info.seventvBadgeCache[userId];
 
-          if (cachedBadge) {
+          if (includeBadge && cachedBadge) {
             Chat.addUserBadge(nick, cachedBadge);
           }
         });
@@ -852,61 +1048,36 @@
 
       Chat.info.seventvBadgeRequests[userId] = request.promise();
 
-      function finish(badge, paint) {
-        Chat.info.seventvBadgeCache[userId] = badge || null;
-
-        if (Chat.info.seventvNamePaints) {
-          Chat.info.seventvPaintCache[userId] = paint || null;
+      if (
+        Chat.info.seventvBadgeQueue.length >=
+        Chat.info.seventvBadgeQueueLimit
+      ) {
+        if (includeBadge) {
+          Chat.info.seventvBadgeCache[userId] = null;
         }
 
-        if (badge) {
-          Chat.addUserBadge(nick, badge);
+        if (includePaint) {
+          Chat.info.seventvPaintCache[userId] = null;
         }
 
+        delete Chat.info.seventvBadgeRequests[userId];
         request.resolve();
+        Chat.warnSevenTvUserLookupOnce(
+          "queue",
+          "lookup queue reached its limit; excess cosmetics were skipped.",
+        );
+        return request.promise();
       }
 
-      $.getJSON("https://7tv.io/v3/users/twitch/" + encodeURIComponent(userId))
-        .done(function (connectionRes) {
-          var badge = Chat.extractSevenTvBadge(connectionRes);
-          var paint = Chat.info.seventvNamePaints
-            ? Chat.extractSevenTvPaint(connectionRes)
-            : null;
+      Chat.info.seventvBadgeQueue.push({
+        nick: nick,
+        userId: userId,
+        includeBadge: includeBadge,
+        includePaint: includePaint,
+        request: request,
+      });
 
-          var sevenTvUserId = Chat.getSevenTvUserIdFromResponse(connectionRes);
-          var hasOnlyColorPaint = paint && paint.name === "7TV Name Color";
-
-          if (
-            Chat.info.seventvNamePaints &&
-            sevenTvUserId &&
-            (!paint || hasOnlyColorPaint)
-          ) {
-            Chat.loadSevenTvUserStyleV4(sevenTvUserId).done(
-              function (styleRes) {
-                var v4Badge = Chat.extractSevenTvBadge(styleRes);
-                var v4Paint = Chat.extractSevenTvPaint(styleRes);
-
-                finish(v4Badge || badge || null, v4Paint || paint || null);
-              },
-            );
-
-            return;
-          }
-
-          finish(badge || null, paint || null);
-        })
-        .fail(function () {
-          Chat.info.seventvBadgeCache[userId] = null;
-
-          if (Chat.info.seventvNamePaints) {
-            Chat.info.seventvPaintCache[userId] = null;
-          }
-
-          request.resolve();
-        })
-        .always(function () {
-          delete Chat.info.seventvBadgeRequests[userId];
-        });
+      Chat.drainSevenTvUserBadgeQueue();
 
       return request.promise();
     },

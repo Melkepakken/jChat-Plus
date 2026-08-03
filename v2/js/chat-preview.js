@@ -205,10 +205,9 @@
           Chat.info.ffzUserBadges = false;
         }
 
-        Chat.loadUserBadges(item.nick, info["user-id"]).always(function () {
-          Chat.info.ffzUserBadges = originalFfzUserBadges;
-          writeTwitchPreviewMessage();
-        });
+        Chat.loadUserBadges(item.nick, info["user-id"]);
+        Chat.info.ffzUserBadges = originalFfzUserBadges;
+        writeTwitchPreviewMessage();
 
         return;
       }

@@ -46,6 +46,47 @@
       return false;
     },
 
+    updateRenderedUserBadges: function (nick) {
+      var badges = Chat.info.userBadges[nick];
+
+      if (
+        Chat.info.hideBadges ||
+        Chat.info.hideAllBadges ||
+        !Array.isArray(badges) ||
+        !badges.length
+      ) {
+        return 0;
+      }
+
+      var $lines = $(".chat_line").filter(function () {
+        return $(this).attr("data-nick") === nick;
+      });
+
+      $lines.each(function () {
+        var $username = $(this).find(".user_info .nick").first();
+
+        if (!$username.length) return;
+
+        var $userInfo = $username.closest(".user_info");
+
+        badges.forEach(function (badge) {
+          var exists = $userInfo.find("img.badge").filter(function () {
+            return $(this).attr("src") === badge.url;
+          }).length;
+
+          if (exists) return;
+
+          var $badge = Chat.appendChatBadge($userInfo, badge);
+
+          if ($badge) {
+            $badge.insertBefore($username);
+          }
+        });
+      });
+
+      return $lines.length;
+    },
+
     addUserBadge: function (nick, userBadge) {
       if (!nick || !userBadge || !userBadge.url) return;
 
@@ -84,7 +125,11 @@
         return done.promise();
       }
 
-      if (Chat.info.ffzUserBadges) {
+      if (
+        Chat.info.ffzUserBadges &&
+        !Chat.info.hideBadges &&
+        !Chat.info.hideAllBadges
+      ) {
         var ffzRequest = $.getJSON(
           "https://api.frankerfacez.com/v1/user/" + encodeURIComponent(nick),
         ).done(function (res) {
@@ -121,6 +166,12 @@
               color: badge.color || false,
             });
           });
+
+          if (!Chat.updateRenderedUserBadges(nick)) {
+            window.setTimeout(function () {
+              Chat.updateRenderedUserBadges(nick);
+            }, 400);
+          }
         });
 
         requests.push(waitFor(ffzRequest));
@@ -189,7 +240,11 @@
         });
       }
 
-      if (/^\d+$/.test(normalizedUserId)) {
+      if (
+        /^\d+$/.test(normalizedUserId) &&
+        ((!Chat.info.hideBadges && !Chat.info.hideAllBadges) ||
+          Chat.shouldLoadSevenTvNamePaint(normalizedUserId))
+      ) {
         requests.push(
           waitFor(Chat.loadSevenTvUserBadge(nick, normalizedUserId)),
         );

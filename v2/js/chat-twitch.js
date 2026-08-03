@@ -145,10 +145,7 @@
                     Chat.shouldLoadUserBadges(nick, message.tags["user-id"])) ||
                   Chat.shouldLoadSevenTvNamePaint(message.tags["user-id"])
                 ) {
-                  Chat.loadUserBadges(nick, message.tags["user-id"]).always(
-                    writeTwitchMessage,
-                  );
-                  return;
+                  Chat.loadUserBadges(nick, message.tags["user-id"]);
                 }
 
                 writeTwitchMessage();
