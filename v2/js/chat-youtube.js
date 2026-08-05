@@ -32,13 +32,138 @@
     return Math.max(500, delay);
   }
 
+  function getYouTubeVideoId(value) {
+    var input = String(value || "").trim();
+
+    if (/^[a-zA-Z0-9_-]{11}$/.test(input)) {
+      return input;
+    }
+
+    try {
+      var url = new URL(
+        /^https?:\/\//i.test(input) ? input : "https://" + input,
+      );
+      var hostname = url.hostname.toLowerCase();
+      var videoId = null;
+
+      if (hostname === "youtu.be") {
+        videoId = url.pathname.split("/").filter(Boolean)[0];
+      } else if (
+        hostname === "youtube.com" ||
+        hostname === "www.youtube.com" ||
+        hostname === "m.youtube.com"
+      ) {
+        videoId = url.searchParams.get("v");
+
+        if (!videoId) {
+          var parts = url.pathname.split("/").filter(Boolean);
+
+          if (
+            parts[0] === "live" ||
+            parts[0] === "embed" ||
+            parts[0] === "shorts"
+          ) {
+            videoId = parts[1];
+          }
+        }
+      }
+
+      return /^[a-zA-Z0-9_-]{11}$/.test(videoId || "") ? videoId : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function normalizeYouTubeHandle(value) {
+    var input = String(value || "").trim();
+
+    if (!input) {
+      return null;
+    }
+
+    try {
+      var url = new URL(
+        /^https?:\/\//i.test(input) ? input : "https://" + input,
+      );
+      var hostname = url.hostname.toLowerCase();
+
+      if (
+        hostname === "youtube.com" ||
+        hostname === "www.youtube.com" ||
+        hostname === "m.youtube.com"
+      ) {
+        var match = url.pathname.match(/^\/@([^/?#]+)/);
+
+        if (match) {
+          input = match[1];
+        }
+      }
+    } catch (err) {
+      // Treat the value as a plain handle.
+    }
+
+    input = input.replace(/^@+/, "");
+
+    return /^[a-zA-Z0-9._-]+$/.test(input) ? input : null;
+  }
+
+  function isSameChannelAlias(value) {
+    return /^(true|1|yes|same|channel|kick)$/i.test(String(value || "").trim());
+  }
+
+  function isYouTubeDisabled(value) {
+    return /^(false|0|no|off|disabled)$/i.test(String(value || "").trim());
+  }
+
+  function getConfiguredYouTubeHandle() {
+    var value = Chat.info.youtubeOption;
+
+    if (Chat.info.youtubeDisabled || !value) {
+      return null;
+    }
+
+    if (!isSameChannelAlias(value)) {
+      return normalizeYouTubeHandle(value);
+    }
+
+    var kickChannel = Chat.info.kickChannel;
+
+    if (
+      kickChannel !== false &&
+      kickChannel !== null &&
+      kickChannel !== undefined
+    ) {
+      var normalizedKick = String(kickChannel).trim();
+
+      if (
+        normalizedKick &&
+        !/^(true|1|yes|same|channel|twitch|kick)$/i.test(normalizedKick)
+      ) {
+        return normalizeYouTubeHandle(normalizedKick);
+      }
+    }
+
+    return normalizeYouTubeHandle(Chat.info.channel);
+  }
+
+  var youtubeOptionProvided = "youtube" in $.QueryString;
+  var youtubeOption = youtubeOptionProvided
+    ? String($.QueryString.youtube || "").trim()
+    : false;
+  var youtubeDisabled =
+    youtubeOptionProvided && isYouTubeDisabled(youtubeOption);
+  var youtubeDirectVideoId =
+    !youtubeDisabled && "youtube_video" in $.QueryString
+      ? getYouTubeVideoId($.QueryString.youtube_video)
+      : null;
+
   $.extend(Chat.info, {
-    youtubeHandle:
-      "youtube" in $.QueryString
-        ? String($.QueryString.youtube || "")
-            .trim()
-            .replace(/^@+/, "")
-        : false,
+    youtubeOption: youtubeOption,
+    youtubeDisabled: youtubeDisabled,
+    youtubeHandle: false,
+    youtubeDirectVideoId: youtubeDirectVideoId,
+    youtubeDirectVideoPending: Boolean(youtubeDirectVideoId),
+    youtubeActiveSource: null,
     youtubeVideoId: null,
     youtubeSession: null,
     youtubeContinuation: null,
@@ -110,10 +235,15 @@
     },
 
     connectYouTube: function () {
-      var handle = Chat.info.youtubeHandle;
+      var directVideoId = Chat.info.youtubeDirectVideoPending
+        ? Chat.info.youtubeDirectVideoId
+        : null;
+      var handle = getConfiguredYouTubeHandle();
+
+      Chat.info.youtubeHandle = handle || false;
 
       if (
-        !handle ||
+        (!directVideoId && !handle) ||
         Chat.info.preview ||
         Chat.info.youtubeResolving ||
         Chat.info.youtubeSession
@@ -127,6 +257,21 @@
       }
 
       Chat.info.youtubeResolving = true;
+
+      if (directVideoId) {
+        Chat.info.youtubeResolving = false;
+        Chat.info.youtubeActiveSource = "video";
+        Chat.info.youtubeVideoId = directVideoId;
+
+        console.log(
+          "jChat YouTube: Connecting directly to video " + directVideoId,
+        );
+
+        Chat.bootstrapYouTubeChat(directVideoId, "video");
+        return;
+      }
+
+      Chat.info.youtubeActiveSource = "handle";
 
       console.log("jChat YouTube: Resolving @" + handle);
 
@@ -142,7 +287,7 @@
 
           Chat.info.youtubeVideoId = liveData.videoId;
 
-          Chat.bootstrapYouTubeChat(liveData.videoId);
+          Chat.bootstrapYouTubeChat(liveData.videoId, "handle");
         })
         .catch(function (err) {
           Chat.info.youtubeResolving = false;
@@ -157,7 +302,12 @@
     },
 
     scheduleYouTubeResolve: function (delay) {
-      if (!Chat.info.youtubeHandle || Chat.info.preview) {
+      var hasDirectVideo = Boolean(
+        Chat.info.youtubeDirectVideoPending && Chat.info.youtubeDirectVideoId,
+      );
+      var handle = getConfiguredYouTubeHandle();
+
+      if ((!hasDirectVideo && !handle) || Chat.info.preview) {
         return;
       }
 
@@ -171,7 +321,10 @@
       }, getPollDelay(delay));
     },
 
-    bootstrapYouTubeChat: function (videoId) {
+    bootstrapYouTubeChat: function (videoId, source) {
+      Chat.info.youtubeActiveSource =
+        source || Chat.info.youtubeActiveSource || "video";
+
       return requestJson(
         "/api/youtube/chat?video=" + encodeURIComponent(videoId),
       )
@@ -332,9 +485,17 @@
     },
 
     handleYouTubeChatEnded: function () {
+      var endedSource = Chat.info.youtubeActiveSource;
+
       console.log("jChat YouTube: Live chat ended");
 
+      if (endedSource === "video") {
+        Chat.info.youtubeDirectVideoPending = false;
+      }
+
       Chat.resetYouTubeConnection(true);
+      Chat.info.youtubeActiveSource = null;
+
       Chat.scheduleYouTubeResolve(Chat.info.youtubeDiscoveryDelay);
     },
 
@@ -457,6 +618,10 @@
 
       Chat.info.youtubeRecentMessageIds = {};
       Chat.info.youtubeRecentMessageOrder = [];
+      Chat.info.youtubeActiveSource = null;
+      Chat.info.youtubeDirectVideoPending = Boolean(
+        Chat.info.youtubeDirectVideoId,
+      );
     },
   });
 })();
