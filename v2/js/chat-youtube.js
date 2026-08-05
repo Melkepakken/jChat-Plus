@@ -203,15 +203,49 @@
       return "hsl(" + hue + ", 75%, 60%)";
     },
 
+    getYouTubeDisplayName: function (value) {
+      return String(value || "")
+        .trim()
+        .replace(/^@+/, "");
+    },
+
+    shouldShowYouTubeMessage: function (data) {
+      if (!data) {
+        return false;
+      }
+
+      var displayName = Chat.getYouTubeDisplayName(data.displayName);
+      var nick = displayName.toLowerCase();
+      var message = String(data.message || "");
+
+      if (!displayName || !message) {
+        return false;
+      }
+
+      if (Chat.isUserBlocked(nick) || Chat.isUserBlocked(displayName)) {
+        return false;
+      }
+
+      if (!Chat.info.showBots && Chat.info.bots.includes(nick)) {
+        return false;
+      }
+
+      if (Chat.info.hideCommands && /^!.+/.test(message)) {
+        return false;
+      }
+
+      return true;
+    },
+
     writeYouTubeMessage: function (data) {
       if (!data) return;
 
-      var displayName = String(data.displayName || "")
-        .trim()
-        .replace(/^@+/, "");
-      var message = String(data.message || "");
+      if (!Chat.shouldShowYouTubeMessage(data)) {
+        return;
+      }
 
-      if (!displayName || !message) return;
+      var displayName = Chat.getYouTubeDisplayName(data.displayName);
+      var message = String(data.message || "");
 
       var nick = displayName.toLowerCase();
       var safeDisplayName = $("<div>").text(displayName).html();
@@ -458,29 +492,31 @@
       }
 
       return messages.filter(function (message) {
-        if (!message || !message.id) {
-          return true;
-        }
-
-        var messageId = String(message.id);
-
-        if (Chat.info.youtubeRecentMessageIds[messageId]) {
+        if (!message) {
           return false;
         }
 
-        Chat.info.youtubeRecentMessageIds[messageId] = true;
-        Chat.info.youtubeRecentMessageOrder.push(messageId);
+        if (message.id) {
+          var messageId = String(message.id);
 
-        while (
-          Chat.info.youtubeRecentMessageOrder.length >
-          Chat.info.youtubeRecentMessageLimit
-        ) {
-          var oldestId = Chat.info.youtubeRecentMessageOrder.shift();
+          if (Chat.info.youtubeRecentMessageIds[messageId]) {
+            return false;
+          }
 
-          delete Chat.info.youtubeRecentMessageIds[oldestId];
+          Chat.info.youtubeRecentMessageIds[messageId] = true;
+          Chat.info.youtubeRecentMessageOrder.push(messageId);
+
+          while (
+            Chat.info.youtubeRecentMessageOrder.length >
+            Chat.info.youtubeRecentMessageLimit
+          ) {
+            var oldestId = Chat.info.youtubeRecentMessageOrder.shift();
+
+            delete Chat.info.youtubeRecentMessageIds[oldestId];
+          }
         }
 
-        return true;
+        return Chat.shouldShowYouTubeMessage(message);
       });
     },
 
