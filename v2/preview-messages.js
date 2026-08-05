@@ -56,6 +56,28 @@
     };
   }
 
+  function youtube(displayName, message, options) {
+    options = options || {};
+
+    var key = String(displayName || "youtube")
+      .toLowerCase()
+      .replace(/^@+/, "")
+      .replace(/[^a-z0-9]+/g, "-");
+
+    return {
+      platform: "youtube",
+      bot: !!options.bot,
+      command: !!options.command,
+      data: {
+        id: "preview-youtube-" + key,
+        userId: options.userId || "UC_PREVIEW_" + key.toUpperCase(),
+        displayName: displayName,
+        message: message,
+        emotes: options.emotes || null,
+      },
+    };
+  }
+
   var twitchMessages = [
     // Core Twitch identity and badge coverage
     twitch(
@@ -2513,5 +2535,117 @@
     ),
   ];
 
-  window.jChatPlusPreviewMessages = twitchMessages.concat(kickMessages);
+  var youtubeBlueSmile = {
+    image:
+      "https://yt3.ggpht.com/cktIaPxFwnrPwn-alHvnvedHLUJwbHi8HCK3AgbHpphrMAW99qw0bDfxuZagSY5ieE9BBrA=w48-h48-c-k-nd",
+    label: "face-blue-smiling",
+  };
+
+  var youtubePurpleCry = {
+    image:
+      "https://yt3.ggpht.com/g6_km98AfdHbN43gvEuNdZ2I07MmzVpArLwEvNBwwPqpZYzszqhRzU_DXALl11TchX5_xFE=w48-h48-c-k-nd",
+    label: "face-purple-crying",
+  };
+
+  var youtubePinkWave = {
+    image:
+      "https://yt3.ggpht.com/KOxdr_z3A5h1Gb7kqnxqOCnbZrBmxI2B_tRQ453BhTWUhYAlpg5ZP8IKEBkcvRoY8grY91Q=w48-h48-c-k-nd",
+    label: "hand-pink-waving",
+  };
+
+  var youtubeMessages = [
+    youtube(
+      "@MelkepakkenTV",
+      "Wait, YouTube chat is actually in the same overlay now?",
+    ),
+    youtube(
+      "@tobba947",
+      "YouTube reporting in. Multistream paperwork complete.",
+    ),
+    youtube(
+      "@datagutt",
+      "The username colours are deterministic, which is unnecessarily satisfying.",
+    ),
+    youtube(
+      "@BodoBandit",
+      "Æøå from YouTube too. Bodø survives another renderer.",
+    ),
+    youtube(
+      "@RiffRagnar",
+      "Play that riff again. The YouTube side barely heard it 🎸",
+    ),
+    youtube(
+      "@EmojiEnjoyer",
+      "youtube_emote_preview_blue youtube_emote_preview_blue youtube_emote_preview_blue",
+      {
+        emotes: {
+          youtube_emote_preview_blue: youtubeBlueSmile,
+        },
+      },
+    ),
+    youtube(
+      "@MixedEmojiDepartment",
+      "That timing was criminal youtube_emote_preview_cry 😭",
+      {
+        emotes: {
+          youtube_emote_preview_cry: youtubePurpleCry,
+        },
+      },
+    ),
+    youtube(
+      "@EmojiWall",
+      "youtube_emote_preview_blue youtube_emote_preview_cry youtube_emote_preview_wave",
+      {
+        emotes: {
+          youtube_emote_preview_blue: youtubeBlueSmile,
+          youtube_emote_preview_cry: youtubePurpleCry,
+          youtube_emote_preview_wave: youtubePinkWave,
+        },
+      },
+    ),
+    youtube(
+      "@WaveFromYouTube",
+      "Hello from the red side youtube_emote_preview_wave",
+      {
+        emotes: {
+          youtube_emote_preview_wave: youtubePinkWave,
+        },
+      },
+    ),
+    youtube(
+      "@NoBadgeAndy",
+      "No badges over here, just names, messages and questionable decisions.",
+    ),
+    youtube("@GambleGeir", "!gamble all", {
+      command: true,
+    }),
+    youtube(
+      "@Nightbot",
+      "Remember to follow the stream and pretend the setup was effortless.",
+      {
+        bot: true,
+      },
+    ),
+    youtube(
+      "@vaulttec",
+      "This message should disappear when vaulttec is blocked.",
+    ),
+    youtube(
+      "@LongMessageLarsYT",
+      "This YouTube message is long enough to check wrapping while Twitch, Kick and YouTube all fight for the same piece of screen without turning the overlay into soup.",
+    ),
+    youtube(
+      "@Metalpakken",
+      "THE RED PLATFORM HAS BEEN JUDGED. THE RIFFS MAY CONTINUE. 🔥🎸",
+    ),
+    youtube(
+      "@Flame",
+      "I opened YouTube for two seconds and somehow the stream got stranger.",
+    ),
+  ];
+
+  window.jChatPlusPreviewMessages = twitchMessages.concat(
+    kickMessages,
+    youtubeMessages,
+  );
 })();

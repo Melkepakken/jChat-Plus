@@ -1,9 +1,38 @@
 (function () {
   window.Chat = window.Chat || {};
 
+  function getPreviewYouTubeEnabled(params) {
+    var youtubeValue = params.get("youtube");
+
+    if (
+      params.has("youtube") &&
+      /^(false|0|no|off|disabled)$/i.test(String(youtubeValue || "").trim())
+    ) {
+      return false;
+    }
+
+    if (
+      params.has("youtube_video") &&
+      String(params.get("youtube_video") || "").trim()
+    ) {
+      return true;
+    }
+
+    return params.has("youtube") && Boolean(String(youtubeValue || "").trim());
+  }
+
+  $.extend(Chat.info, {
+    previewYouTubeEnabled: getPreviewYouTubeEnabled(
+      new URLSearchParams(window.location.search),
+    ),
+  });
+
   $.extend(Chat, {
     isPreviewKickEnabled: function () {
       return Chat.info.kickRoomId || Chat.info.kickChannel !== false;
+    },
+    isPreviewYouTubeEnabled: function () {
+      return Chat.info.previewYouTubeEnabled === true;
     },
 
     loadPreviewKickAssets: function (callback) {
@@ -49,6 +78,17 @@
         ) {
           return false;
         }
+      } else if (item.platform === "youtube") {
+        if (!Chat.isPreviewYouTubeEnabled()) {
+          return false;
+        }
+
+        if (
+          typeof Chat.shouldShowYouTubeMessage !== "function" ||
+          !Chat.shouldShowYouTubeMessage(item.data)
+        ) {
+          return false;
+        }
       } else {
         var displayName = item.info && item.info["display-name"];
 
@@ -83,6 +123,14 @@
         ].join(":");
       }
 
+      if (item.platform === "youtube") {
+        return [
+          "youtube",
+          item.data ? item.data.displayName || "" : "",
+          item.data ? item.data.message || "" : "",
+        ].join(":");
+      }
+
       return ["twitch", item.nick || "", item.message || ""].join(":");
     },
 
@@ -91,18 +139,35 @@
         return null;
       }
 
-      var attempts = Math.max(8, Chat.previewMessages.length * 4);
+      var platformPools = {};
+
+      Chat.previewMessages.forEach(function (item) {
+        if (!Chat.shouldShowPreviewMessage(item)) {
+          return;
+        }
+
+        var platform = item.platform || "twitch";
+
+        if (!platformPools[platform]) {
+          platformPools[platform] = [];
+        }
+
+        platformPools[platform].push(item);
+      });
+
+      var platforms = Object.keys(platformPools);
+
+      if (!platforms.length) {
+        return null;
+      }
+
+      var attempts = Math.max(8, platforms.length * 4);
       var fallback = null;
 
       for (var i = 0; i < attempts; i++) {
-        var candidate =
-          Chat.previewMessages[
-            Math.floor(Math.random() * Chat.previewMessages.length)
-          ];
-
-        if (!Chat.shouldShowPreviewMessage(candidate)) {
-          continue;
-        }
+        var platform = platforms[Math.floor(Math.random() * platforms.length)];
+        var pool = platformPools[platform];
+        var candidate = pool[Math.floor(Math.random() * pool.length)];
 
         if (!fallback) {
           fallback = candidate;
@@ -133,7 +198,10 @@
         return randomBetween(1600, 2800);
       }
 
-      return randomBetween(Chat.info.previewMinDelay, Chat.info.previewMaxDelay);
+      return randomBetween(
+        Chat.info.previewMinDelay,
+        Chat.info.previewMaxDelay,
+      );
     },
 
     scheduleNextPreviewMessage: function (delay) {
@@ -171,9 +239,22 @@
       if (item.platform === "kick") {
         var kickData = $.extend(true, {}, item.data);
 
-        kickData.id = "preview-kick-" + Date.now() + "-" + Chat.info.previewIndex;
+        kickData.id =
+          "preview-kick-" + Date.now() + "-" + Chat.info.previewIndex;
 
         Chat.writeKick(kickData);
+
+        if (callback) callback();
+        return;
+      }
+
+      if (item.platform === "youtube") {
+        var youtubeData = $.extend(true, {}, item.data);
+
+        youtubeData.id =
+          "preview-youtube-" + Date.now() + "-" + Chat.info.previewIndex;
+
+        Chat.writeYouTubeMessage(youtubeData);
 
         if (callback) callback();
         return;
@@ -244,8 +325,12 @@
         return params.has(name) && /^(1|true|yes)$/i.test(params.get(name));
       }
 
-      Chat.info.size = params.has("size") ? parseInt(params.get("size"), 10) : 3;
-      Chat.info.font = params.has("font") ? parseInt(params.get("font"), 10) : 0;
+      Chat.info.size = params.has("size")
+        ? parseInt(params.get("size"), 10)
+        : 3;
+      Chat.info.font = params.has("font")
+        ? parseInt(params.get("font"), 10)
+        : 0;
       Chat.info.stroke = params.has("stroke")
         ? parseInt(params.get("stroke"), 10)
         : false;
@@ -283,6 +368,7 @@
         : params.has("kick_channel")
           ? params.get("kick_channel")
           : false;
+      Chat.info.previewYouTubeEnabled = getPreviewYouTubeEnabled(params);
       Chat.info.blockedUsers = params.has("block")
         ? Chat.normalizeBlockedUsers(params.get("block"))
         : false;
