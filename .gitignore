@@ -2,6 +2,7 @@ credentials.js
 backups/
 t/
 .vscode
+.wrangler/
 
 v2/credentials.js
 .dev.vars
