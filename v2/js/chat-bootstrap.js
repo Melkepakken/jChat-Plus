@@ -2,6 +2,10 @@ $(document).ready(function () {
   Chat.connect(
     $.QueryString.channel ? $.QueryString.channel.toLowerCase() : "twitch",
   );
+
+  if (typeof Chat.connectYouTube === "function") {
+    Chat.connectYouTube();
+  }
 });
 
 window.addEventListener("message", function (event) {
