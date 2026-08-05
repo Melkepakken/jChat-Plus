@@ -80,10 +80,7 @@
       var safeDisplayName = $("<div>").text(displayName).html();
       var messageId =
         data.id ||
-        "test-" +
-          Date.now() +
-          "-" +
-          Math.random().toString(36).slice(2);
+        "test-" + Date.now() + "-" + Math.random().toString(36).slice(2);
 
       var info = {
         id: "youtube:" + messageId,
@@ -108,12 +105,9 @@
       }
 
       Chat.stopYouTubePolling();
-
       console.log("jChat YouTube: Resolving @" + handle);
 
-      requestJson(
-        "/api/youtube/live?handle=" + encodeURIComponent(handle),
-      )
+      requestJson("/api/youtube/live?handle=" + encodeURIComponent(handle))
         .then(function (liveData) {
           if (!liveData.live || !liveData.videoId) {
             console.log("jChat YouTube: @" + handle + " is not live");
@@ -125,10 +119,7 @@
           return Chat.bootstrapYouTubeChat(liveData.videoId);
         })
         .catch(function (err) {
-          console.error(
-            "jChat YouTube: Could not resolve live broadcast",
-            err,
-          );
+          console.error("jChat YouTube: Could not resolve live broadcast", err);
         });
     },
 
@@ -140,15 +131,11 @@
           var feed = String(chatData.feed || "").toLowerCase();
 
           if (feed !== "live chat" && feed !== "all chat") {
-            throw new Error(
-              "YouTube did not return the unfiltered chat feed.",
-            );
+            throw new Error("YouTube did not return the unfiltered chat feed.");
           }
 
           if (!chatData.session || !chatData.continuation) {
-            throw new Error(
-              "YouTube chat bootstrap data was incomplete.",
-            );
+            throw new Error("YouTube chat bootstrap data was incomplete.");
           }
 
           Chat.info.youtubeSession = chatData.session;
@@ -164,10 +151,7 @@
           Chat.scheduleYouTubePoll(chatData.timeoutMs);
         })
         .catch(function (err) {
-          console.error(
-            "jChat YouTube: Could not start live chat",
-            err,
-          );
+          console.error("jChat YouTube: Could not start live chat", err);
         });
     },
 
@@ -206,29 +190,53 @@
           Chat.info.youtubePolling = false;
 
           if (!chatData.continuation) {
-            throw new Error(
-              "YouTube returned no next continuation.",
-            );
+            throw new Error("YouTube returned no next continuation.");
           }
 
-          Chat.info.youtubeContinuation =
-            chatData.continuation;
+          Chat.info.youtubeContinuation = chatData.continuation;
 
-          Chat.queueYouTubeMessages(
-            chatData.messages,
-            chatData.timeoutMs,
-          );
+          if (Array.isArray(chatData.deletedMessageIds)) {
+            chatData.deletedMessageIds.forEach(function (messageId) {
+              Chat.removeYouTubeMessage(messageId);
+            });
+          }
+
+          Chat.queueYouTubeMessages(chatData.messages, chatData.timeoutMs);
 
           Chat.scheduleYouTubePoll(chatData.timeoutMs);
         })
         .catch(function (err) {
           Chat.info.youtubePolling = false;
 
-          console.error(
-            "jChat YouTube: Live chat polling stopped",
-            err,
-          );
+          console.error("jChat YouTube: Live chat polling stopped", err);
         });
+    },
+
+    removeYouTubeMessage: function (messageId) {
+      if (!messageId) {
+        return;
+      }
+
+      var fullMessageId = "youtube:" + messageId;
+
+      Chat.clearMessage(fullMessageId);
+
+      var originalLength = Chat.info.youtubeMessageQueue.length;
+
+      Chat.info.youtubeMessageQueue = Chat.info.youtubeMessageQueue.filter(
+        function (queued) {
+          return !(queued && queued.message && queued.message.id === messageId);
+        },
+      );
+
+      if (
+        Chat.info.youtubeMessageQueue.length !== originalLength &&
+        Chat.info.youtubeQueueTimer
+      ) {
+        clearTimeout(Chat.info.youtubeQueueTimer);
+        Chat.info.youtubeQueueTimer = null;
+        Chat.drainYouTubeMessageQueue();
+      }
     },
 
     queueYouTubeMessages: function (messages, timeoutMs) {
@@ -244,9 +252,7 @@
       var slotLength = releaseWindow / messages.length;
       var now = Date.now();
       var lastQueued =
-        Chat.info.youtubeMessageQueue[
-          Chat.info.youtubeMessageQueue.length - 1
-        ];
+        Chat.info.youtubeMessageQueue[Chat.info.youtubeMessageQueue.length - 1];
       var batchStart = lastQueued
         ? Math.max(now, lastQueued.releaseAt + 50)
         : now;
@@ -255,10 +261,8 @@
         var slotStart = index * slotLength;
         var slotPadding = slotLength * 0.18;
         var earliest = slotStart + slotPadding;
-        var latest =
-          slotStart + slotLength - slotPadding;
-        var randomizedOffset =
-          earliest + Math.random() * (latest - earliest);
+        var latest = slotStart + slotLength - slotPadding;
+        var randomizedOffset = earliest + Math.random() * (latest - earliest);
 
         Chat.info.youtubeMessageQueue.push({
           message: message,
@@ -283,8 +287,7 @@
       Chat.info.youtubeQueueTimer = setTimeout(function () {
         Chat.info.youtubeQueueTimer = null;
 
-        var queued =
-          Chat.info.youtubeMessageQueue.shift();
+        var queued = Chat.info.youtubeMessageQueue.shift();
 
         if (queued) {
           Chat.writeYouTubeMessage(queued.message);

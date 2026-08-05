@@ -266,6 +266,31 @@ function parseTextMessages(actions) {
   return messages;
 }
 
+function parseDeletedMessageIds(actions) {
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+
+  var deletedMessageIds = [];
+  var seen = {};
+
+  actions.forEach(function (action) {
+    var messageId =
+      action &&
+      action.removeChatItemAction &&
+      action.removeChatItemAction.targetItemId;
+
+    if (!messageId || seen[messageId]) {
+      return;
+    }
+
+    seen[messageId] = true;
+    deletedMessageIds.push(messageId);
+  });
+
+  return deletedMessageIds;
+}
+
 function extractNextContinuation(continuations) {
   if (!Array.isArray(continuations)) {
     return {
@@ -366,6 +391,7 @@ async function fetchChatBatch(session, continuation) {
 
   return {
     messages: parseTextMessages(liveChatContinuation.actions),
+    deletedMessageIds: parseDeletedMessageIds(liveChatContinuation.actions),
     continuation: next.continuation,
     timeoutMs: next.timeoutMs || 1000,
   };
@@ -437,10 +463,7 @@ export async function onRequestGet(context) {
       context: innertubeContext,
     };
 
-    var firstBatch = await fetchChatBatch(
-      session,
-      unfilteredChat.continuation,
-    );
+    var firstBatch = await fetchChatBatch(session, unfilteredChat.continuation);
 
     return jsonResponse({
       videoId: videoId,
@@ -465,9 +488,7 @@ export async function onRequestPost(context) {
     var body = await context.request.json();
     var session = body && body.session;
     var continuation =
-      body && typeof body.continuation === "string"
-        ? body.continuation
-        : "";
+      body && typeof body.continuation === "string" ? body.continuation : "";
 
     if (!isValidSession(session) || !continuation) {
       return jsonResponse(
@@ -482,6 +503,7 @@ export async function onRequestPost(context) {
 
     return jsonResponse({
       messages: batch.messages,
+      deletedMessageIds: batch.deletedMessageIds,
       continuation: batch.continuation,
       timeoutMs: batch.timeoutMs,
     });
