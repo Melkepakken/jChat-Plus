@@ -352,6 +352,13 @@ function isValidSession(session) {
   );
 }
 
+function createChatEndedError() {
+  var error = new Error("YouTube live chat ended.");
+  error.code = "youtube_chat_ended";
+
+  return error;
+}
+
 async function fetchChatBatch(session, continuation) {
   var pollUrl =
     "https://www.youtube.com/youtubei/v1/live_chat/get_live_chat" +
@@ -380,13 +387,13 @@ async function fetchChatBatch(session, continuation) {
     pollData.continuationContents.liveChatContinuation;
 
   if (!liveChatContinuation) {
-    throw new Error("YouTube live-chat response was missing.");
+    throw createChatEndedError();
   }
 
   var next = extractNextContinuation(liveChatContinuation.continuations);
 
   if (!next.continuation) {
-    throw new Error("YouTube returned no next continuation.");
+    throw createChatEndedError();
   }
 
   return {
@@ -473,12 +480,17 @@ export async function onRequestGet(context) {
       timeoutMs: firstBatch.timeoutMs,
     });
   } catch (err) {
+    var ended = err && err.code === "youtube_chat_ended";
+
     return jsonResponse(
       {
-        error: "Could not retrieve YouTube live chat.",
+        error: ended
+          ? "YouTube live chat ended."
+          : "Could not retrieve YouTube live chat.",
+        code: ended ? "youtube_chat_ended" : "youtube_chat_error",
         message: err && err.message ? err.message : String(err),
       },
-      502,
+      ended ? 410 : 502,
     );
   }
 }
@@ -508,12 +520,17 @@ export async function onRequestPost(context) {
       timeoutMs: batch.timeoutMs,
     });
   } catch (err) {
+    var ended = err && err.code === "youtube_chat_ended";
+
     return jsonResponse(
       {
-        error: "Could not retrieve YouTube live chat.",
+        error: ended
+          ? "YouTube live chat ended."
+          : "Could not retrieve YouTube live chat.",
+        code: ended ? "youtube_chat_ended" : "youtube_chat_error",
         message: err && err.message ? err.message : String(err),
       },
-      502,
+      ended ? 410 : 502,
     );
   }
 }
