@@ -1,6 +1,64 @@
 (function () {
   window.Chat = window.Chat || {};
 
+  var previewPlatformWeights = {
+    twitch: 2,
+    kick: 1,
+    youtube: 1,
+  };
+  var previewMessageBags = {};
+
+  function resetPreviewMessageBags() {
+    previewMessageBags = {};
+  }
+
+  function shufflePreviewMessages(items) {
+    for (var i = items.length - 1; i > 0; i--) {
+      var randomIndex = Math.floor(Math.random() * (i + 1));
+      var item = items[i];
+
+      items[i] = items[randomIndex];
+      items[randomIndex] = item;
+    }
+
+    return items;
+  }
+
+  function takePreviewMessage(platform, pool) {
+    var bag = previewMessageBags[platform];
+
+    if (!bag) {
+      bag = {
+        items: [],
+        lastKey: null,
+      };
+      previewMessageBags[platform] = bag;
+    }
+
+    if (!bag.items.length) {
+      bag.items = shufflePreviewMessages(pool.slice());
+
+      var nextIndex = bag.items.length - 1;
+
+      if (
+        bag.items.length > 1 &&
+        Chat.getPreviewMessageKey(bag.items[nextIndex]) === bag.lastKey
+      ) {
+        var swapIndex = Math.floor(Math.random() * nextIndex);
+        var swapItem = bag.items[nextIndex];
+
+        bag.items[nextIndex] = bag.items[swapIndex];
+        bag.items[swapIndex] = swapItem;
+      }
+    }
+
+    var item = bag.items.pop();
+
+    bag.lastKey = Chat.getPreviewMessageKey(item);
+
+    return item;
+  }
+
   function getPreviewYouTubeEnabled(params) {
     var youtubeValue = params.get("youtube");
 
@@ -29,7 +87,26 @@
 
   $.extend(Chat, {
     isPreviewKickEnabled: function () {
-      return Chat.info.kickRoomId || Chat.info.kickChannel !== false;
+      if (Chat.info.kickRoomId) {
+        return true;
+      }
+
+      var kickChannel = Chat.info.kickChannel;
+
+      if (
+        kickChannel === false ||
+        kickChannel === null ||
+        kickChannel === undefined
+      ) {
+        return false;
+      }
+
+      kickChannel = String(kickChannel).trim();
+
+      return (
+        Boolean(kickChannel) &&
+        !/^(false|0|no|off|disabled)$/i.test(kickChannel)
+      );
     },
     isPreviewYouTubeEnabled: function () {
       return Chat.info.previewYouTubeEnabled === true;
@@ -140,6 +217,7 @@
       }
 
       var platformPools = {};
+      var platformMessageKeys = {};
 
       Chat.previewMessages.forEach(function (item) {
         if (!Chat.shouldShowPreviewMessage(item)) {
@@ -150,8 +228,16 @@
 
         if (!platformPools[platform]) {
           platformPools[platform] = [];
+          platformMessageKeys[platform] = Object.create(null);
         }
 
+        var key = Chat.getPreviewMessageKey(item);
+
+        if (platformMessageKeys[platform][key]) {
+          return;
+        }
+
+        platformMessageKeys[platform][key] = true;
         platformPools[platform].push(item);
       });
 
@@ -161,26 +247,20 @@
         return null;
       }
 
-      var attempts = Math.max(8, platforms.length * 4);
-      var fallback = null;
+      var weightedPlatforms = [];
 
-      for (var i = 0; i < attempts; i++) {
-        var platform = platforms[Math.floor(Math.random() * platforms.length)];
-        var pool = platformPools[platform];
-        var candidate = pool[Math.floor(Math.random() * pool.length)];
+      platforms.forEach(function (platform) {
+        var weight = previewPlatformWeights[platform] || 1;
 
-        if (!fallback) {
-          fallback = candidate;
+        for (var i = 0; i < weight; i++) {
+          weightedPlatforms.push(platform);
         }
+      });
 
-        var key = Chat.getPreviewMessageKey(candidate);
+      var platform =
+        weightedPlatforms[Math.floor(Math.random() * weightedPlatforms.length)];
 
-        if (key !== Chat.info.previewLastMessageKey) {
-          return candidate;
-        }
-      }
-
-      return fallback;
+      return takePreviewMessage(platform, platformPools[platform]);
     },
 
     getRandomPreviewDelay: function () {
@@ -308,6 +388,7 @@
     },
 
     startPreview: function () {
+      resetPreviewMessageBags();
       Chat.info.lines = [];
       Chat.info.previewLastMessageKey = null;
       $("#chat_container").empty();
@@ -372,6 +453,7 @@
       Chat.info.blockedUsers = params.has("block")
         ? Chat.normalizeBlockedUsers(params.get("block"))
         : false;
+      resetPreviewMessageBags();
       Chat.applyStaticStyles();
 
       if (Chat.info.preview) {
