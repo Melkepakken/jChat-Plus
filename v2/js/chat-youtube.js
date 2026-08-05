@@ -237,6 +237,32 @@
       return true;
     },
 
+    registerYouTubeEmotes: function (emotes) {
+      if (!emotes || typeof emotes !== "object") {
+        return;
+      }
+
+      Object.keys(emotes).forEach(function (token) {
+        var emote = emotes[token];
+
+        if (
+          !token ||
+          !emote ||
+          typeof emote.image !== "string" ||
+          !/^https:\/\//i.test(emote.image)
+        ) {
+          return;
+        }
+
+        Chat.info.emotes[token] = {
+          image: emote.image,
+          zeroWidth: false,
+          youtube: true,
+          label: typeof emote.label === "string" ? emote.label : "",
+        };
+      });
+    },
+
     writeYouTubeMessage: function (data) {
       if (!data) return;
 
@@ -246,6 +272,8 @@
 
       var displayName = Chat.getYouTubeDisplayName(data.displayName);
       var message = String(data.message || "");
+
+      Chat.registerYouTubeEmotes(data.emotes);
 
       var nick = displayName.toLowerCase();
       var safeDisplayName = $("<div>").text(displayName).html();

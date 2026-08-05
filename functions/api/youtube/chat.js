@@ -218,16 +218,140 @@ function extractInnertubeContext(html) {
   }
 }
 
-function getMessageText(message) {
-  if (!message || !Array.isArray(message.runs)) {
-    return "";
+function getYouTubeEmojiToken(value) {
+  var input = String(value || "youtube-emoji");
+  var hash = 0;
+
+  for (var i = 0; i < input.length; i++) {
+    hash = input.charCodeAt(i) + ((hash << 5) - hash);
+    hash |= 0;
   }
 
-  return message.runs
-    .map(function (run) {
-      return run && typeof run.text === "string" ? run.text : "";
-    })
-    .join("");
+  return "youtube_emote_" + (hash >>> 0).toString(36);
+}
+
+function getYouTubeEmojiLabel(emoji) {
+  if (
+    emoji &&
+    emoji.image &&
+    emoji.image.accessibility &&
+    emoji.image.accessibility.accessibilityData &&
+    typeof emoji.image.accessibility.accessibilityData.label === "string"
+  ) {
+    return emoji.image.accessibility.accessibilityData.label;
+  }
+
+  if (
+    emoji &&
+    Array.isArray(emoji.shortcuts) &&
+    typeof emoji.shortcuts[0] === "string"
+  ) {
+    return emoji.shortcuts[0];
+  }
+
+  return "";
+}
+
+function getYouTubeEmojiImage(emoji) {
+  var thumbnails =
+    emoji && emoji.image && Array.isArray(emoji.image.thumbnails)
+      ? emoji.image.thumbnails
+      : [];
+
+  var best = null;
+
+  thumbnails.forEach(function (thumbnail) {
+    if (
+      !thumbnail ||
+      typeof thumbnail.url !== "string" ||
+      !/^https:\/\//i.test(thumbnail.url)
+    ) {
+      return;
+    }
+
+    var size =
+      (parseInt(thumbnail.width, 10) || 0) *
+      (parseInt(thumbnail.height, 10) || 0);
+
+    if (!best || size >= best.size) {
+      best = {
+        url: thumbnail.url,
+        size: size,
+      };
+    }
+  });
+
+  return best ? best.url : null;
+}
+
+function parseMessageContent(message) {
+  var result = {
+    message: "",
+    emotes: {},
+  };
+
+  if (!message || !Array.isArray(message.runs)) {
+    return result;
+  }
+
+  var parts = [];
+
+  message.runs.forEach(function (run) {
+    if (!run) {
+      return;
+    }
+
+    if (typeof run.text === "string") {
+      parts.push(run.text);
+      return;
+    }
+
+    var emoji = run.emoji;
+
+    if (!emoji) {
+      return;
+    }
+
+    if (emoji.isCustomEmoji) {
+      var image = getYouTubeEmojiImage(emoji);
+      var label = getYouTubeEmojiLabel(emoji);
+      var token = getYouTubeEmojiToken(emoji.emojiId || image || label);
+
+      if (!image) {
+        if (label) {
+          parts.push(label);
+        }
+
+        return;
+      }
+
+      result.emotes[token] = {
+        image: image,
+        label: label,
+      };
+
+      parts.push(" " + token + " ");
+      return;
+    }
+
+    if (typeof emoji.emojiId === "string") {
+      parts.push(emoji.emojiId);
+      return;
+    }
+
+    var fallbackLabel = getYouTubeEmojiLabel(emoji);
+
+    if (fallbackLabel) {
+      parts.push(fallbackLabel);
+    }
+  });
+
+  result.message = parts
+    .join("")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
+  return result;
 }
 
 function parseTextMessages(actions) {
@@ -249,9 +373,9 @@ function parseTextMessages(actions) {
     }
 
     var displayName = getText(renderer.authorName).trim();
-    var message = getMessageText(renderer.message);
+    var parsedMessage = parseMessageContent(renderer.message);
 
-    if (!displayName || !message) {
+    if (!displayName || !parsedMessage.message) {
       return;
     }
 
@@ -259,7 +383,8 @@ function parseTextMessages(actions) {
       id: renderer.id || null,
       userId: renderer.authorExternalChannelId || null,
       displayName: displayName,
-      message: message,
+      message: parsedMessage.message,
+      emotes: parsedMessage.emotes,
     });
   });
 
