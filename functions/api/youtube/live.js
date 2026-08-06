@@ -8,6 +8,7 @@ const CACHE_TTL = {
   liveResult: 60,
   offlineResult: 5 * 60,
   searchMiss: 60 * 60,
+  searchClientCooldown: 30 * 60,
   searchDisabled: 6 * 60 * 60,
 };
 const inFlightResolutions = new Map();
@@ -457,16 +458,48 @@ async function resolveLiveVideo(context, handle, apiKey) {
     );
   }
 
+  const searchClient = context.request.headers.get("CF-Connecting-IP");
+
+  if (
+    searchClient &&
+    (await readCache(context, "searchClientCooldown", searchClient)) !== null
+  ) {
+    return resolveFromUploads(
+      context,
+      handle,
+      apiKey,
+      channel,
+      "search-client-throttled-uploads",
+    );
+  }
+
+  if (searchClient) {
+    await writeCache(
+      context,
+      "searchClientCooldown",
+      searchClient,
+      { active: true },
+      CACHE_TTL.searchClientCooldown,
+    );
+  }
+
   let searchVideoIds;
 
   try {
     searchVideoIds = await searchLiveVideoIds(channel.channelId, apiKey);
   } catch (error) {
+    const quotaExceeded =
+      error?.stage === "search.list" && error.reason === "quotaExceeded";
+
+    if (!quotaExceeded && searchClient) {
+      await deleteCache(context, "searchClientCooldown", searchClient);
+    }
+
     if (error?.stage !== "search.list") {
       throw error;
     }
 
-    if (error.reason === "quotaExceeded") {
+    if (quotaExceeded) {
       await writeCache(
         context,
         "searchDisabled",
