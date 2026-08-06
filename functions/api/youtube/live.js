@@ -1,6 +1,17 @@
-function jsonResponse(body, status) {
+const YOUTUBE_API_ROOT = "https://www.googleapis.com/youtube/v3/";
+const MAX_UPLOADS = 50;
+const CACHE_VERSION = "v1";
+const CACHE_TTL = {
+  channel: 3 * 24 * 60 * 60,
+  knownLive: 24 * 60 * 60,
+  liveResult: 60,
+  offlineResult: 5 * 60,
+};
+const inFlightResolutions = new Map();
+
+function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
-    status: status || 200,
+    status,
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
@@ -9,214 +20,273 @@ function jsonResponse(body, status) {
 }
 
 function normalizeHandle(value) {
-  var handle = String(value || "")
+  const handle = String(value || "")
     .trim()
     .replace(/^@+/, "");
 
-  if (!handle || !/^[a-zA-Z0-9._-]+$/.test(handle)) {
-    return null;
-  }
-
-  return handle;
-}
-
-function getBrowserHeaders() {
-  return {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-      "AppleWebKit/537.36 (KHTML, like Gecko) " +
-      "Chrome/130.0.0.0 Safari/537.36",
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    Cookie: "CONSENT=YES+1",
-  };
+  return handle && /^[a-zA-Z0-9._-]+$/.test(handle) ? handle : null;
 }
 
 function isVideoId(value) {
   return /^[a-zA-Z0-9_-]{11}$/.test(String(value || ""));
 }
 
-function getVideoIdFromUrl(value) {
-  if (!value) {
+function apiError(stage, status = null) {
+  const error = new Error("YouTube Data API request failed.");
+  error.name = "YouTubeApiError";
+  error.stage = stage;
+  error.status = status;
+  return error;
+}
+
+async function fetchApi(path, params, apiKey, stage) {
+  const url = new URL(path, YOUTUBE_API_ROOT);
+
+  for (const [name, value] of Object.entries(params)) {
+    url.searchParams.set(name, value);
+  }
+
+  let response;
+
+  try {
+    response = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json",
+        "X-Goog-Api-Key": apiKey,
+      },
+    });
+  } catch {
+    throw apiError(stage);
+  }
+
+  if (!response.ok) {
+    throw apiError(stage, response.status);
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    throw apiError(`${stage}-json`, response.status);
+  }
+}
+
+function responseItems(data, stage) {
+  if (!data || typeof data !== "object") {
+    throw apiError(`${stage}-shape`, 200);
+  }
+
+  if (data.items == null) {
+    return [];
+  }
+
+  if (!Array.isArray(data.items)) {
+    throw apiError(`${stage}-shape`, 200);
+  }
+
+  return data.items;
+}
+
+function defaultCache() {
+  return globalThis.caches?.default || null;
+}
+
+function cacheKey(context, kind, handle) {
+  const url = new URL(context.request.url);
+  url.pathname =
+    `/__jchat-youtube-live-cache/${CACHE_VERSION}/${kind}/` +
+    encodeURIComponent(handle.toLowerCase());
+  url.search = "";
+  url.hash = "";
+  return new Request(url.toString(), { method: "GET" });
+}
+
+async function readCache(context, kind, handle) {
+  const cache = defaultCache();
+
+  if (!cache) {
     return null;
   }
 
   try {
-    var url = new URL(value, "https://www.youtube.com");
-    var hostname = url.hostname.toLowerCase();
-    var videoId = null;
-
-    if (hostname === "youtu.be" || hostname.slice(-9) === ".youtu.be") {
-      videoId = url.pathname.match(/^\/([a-zA-Z0-9_-]{11})(?:\/|$)/);
-      return videoId ? videoId[1] : null;
-    }
-
-    if (hostname !== "youtube.com" && hostname.slice(-12) !== ".youtube.com") {
-      return null;
-    }
-
-    if (url.pathname === "/watch") {
-      videoId = url.searchParams.get("v");
-      return isVideoId(videoId) ? videoId : null;
-    }
-
-    videoId = url.pathname.match(/^\/live\/([a-zA-Z0-9_-]{11})(?:\/|$)/);
-
-    return videoId ? videoId[1] : null;
-  } catch (err) {
+    const response = await cache.match(cacheKey(context, kind, handle));
+    return response ? await response.json() : null;
+  } catch {
+    console.warn("[youtube-live] Internal cache read failed.", { kind });
     return null;
   }
 }
 
-function extractJsonObject(source, markerIndex) {
-  var start = source.indexOf("{", markerIndex);
+async function writeCache(context, kind, handle, value, ttl) {
+  const cache = defaultCache();
 
-  if (start === -1) {
-    return null;
-  }
-
-  var depth = 0;
-  var inString = false;
-  var escaped = false;
-
-  for (var i = start; i < source.length; i++) {
-    var character = source[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (character === "\\") {
-        escaped = true;
-      } else if (character === '"') {
-        inString = false;
-      }
-
-      continue;
-    }
-
-    if (character === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (character === "{") {
-      depth++;
-      continue;
-    }
-
-    if (character === "}") {
-      depth--;
-
-      if (depth === 0) {
-        return source.slice(start, i + 1);
-      }
-    }
-  }
-
-  return null;
-}
-
-function extractInitialPlayerResponse(html) {
-  var markerPattern =
-    /(?:var\s+ytInitialPlayerResponse|window\s*\[\s*["']ytInitialPlayerResponse["']\s*\]|ytInitialPlayerResponse)\s*=/g;
-  var marker;
-
-  while ((marker = markerPattern.exec(html))) {
-    var json = extractJsonObject(html, marker.index + marker[0].length);
-
-    if (!json) {
-      continue;
-    }
-
-    try {
-      return JSON.parse(json);
-    } catch (err) {
-      // Try the next known assignment.
-    }
-  }
-
-  return null;
-}
-
-function extractInitialData(html) {
-  var markerPattern =
-    /(?:var\s+ytInitialData|window\s*\[\s*["']ytInitialData["']\s*\]|ytInitialData)\s*=/g;
-  var marker;
-
-  while ((marker = markerPattern.exec(html))) {
-    var json = extractJsonObject(html, marker.index + marker[0].length);
-
-    if (!json) {
-      continue;
-    }
-
-    try {
-      return JSON.parse(json);
-    } catch (err) {
-      // Try the next known assignment.
-    }
-  }
-
-  return null;
-}
-
-function extractStringField(source, key) {
-  var pattern = new RegExp('"' + key + '"\\s*:\\s*"([^"\\\\]+)"');
-  var match = source.match(pattern);
-
-  return match ? match[1] : null;
-}
-
-function extractInnertubeContext(html) {
-  var markerIndex = html.indexOf('"INNERTUBE_CONTEXT"');
-
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  var json = extractJsonObject(html, markerIndex);
-
-  if (!json) {
-    return null;
+  if (!cache) {
+    return;
   }
 
   try {
-    return JSON.parse(json);
-  } catch (err) {
-    return null;
+    await cache.put(
+      cacheKey(context, kind, handle),
+      new Response(JSON.stringify(value), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": `public, max-age=${ttl}`,
+        },
+      }),
+    );
+  } catch {
+    console.warn("[youtube-live] Internal cache write failed.", { kind });
   }
 }
 
-function getHtmlAttribute(tag, name) {
-  var pattern = new RegExp(
-    "\\b" + name + "\\s*=\\s*(?:\\\"([^\\\"]*)\\\"|'([^']*)'|([^\\s>]+))",
-    "i",
+async function deleteCache(context, kind, handle) {
+  const cache = defaultCache();
+
+  if (!cache) {
+    return;
+  }
+
+  try {
+    await cache.delete(cacheKey(context, kind, handle));
+  } catch {
+    console.warn("[youtube-live] Internal cache delete failed.", { kind });
+  }
+}
+
+function cachedResolution(value) {
+  if (value?.live === false) {
+    return { live: false };
+  }
+
+  if (value?.live === true && isVideoId(value.videoId)) {
+    return { live: true, videoId: value.videoId };
+  }
+
+  return null;
+}
+
+function cachedChannel(value) {
+  if (
+    typeof value?.channelId !== "string" ||
+    typeof value?.uploadsPlaylistId !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    channelId: value.channelId,
+    uploadsPlaylistId: value.uploadsPlaylistId,
+  };
+}
+
+async function resolveChannel(context, handle, apiKey) {
+  const cached = cachedChannel(await readCache(context, "channel", handle));
+
+  if (cached) {
+    return cached;
+  }
+
+  const items = responseItems(
+    await fetchApi(
+      "channels",
+      {
+        part: "contentDetails",
+        forHandle: handle,
+        maxResults: "1",
+        fields: "items(id,contentDetails/relatedPlaylists/uploads)",
+      },
+      apiKey,
+      "channels.list",
+    ),
+    "channels.list",
   );
-  var match = tag.match(pattern);
 
-  return match ? match[1] || match[2] || match[3] || "" : null;
+  if (!items.length) {
+    return null;
+  }
+
+  const item = items[0] || {};
+  const channel = {
+    channelId: item.id,
+    uploadsPlaylistId: item.contentDetails?.relatedPlaylists?.uploads,
+  };
+
+  if (
+    typeof channel.channelId !== "string" ||
+    typeof channel.uploadsPlaylistId !== "string"
+  ) {
+    throw apiError("channels.list-shape", 200);
+  }
+
+  await writeCache(context, "channel", handle, channel, CACHE_TTL.channel);
+  return channel;
 }
 
-function getMetadataVideoId(html) {
-  var tags = html.match(/<(?:link|meta)\b[^>]*>/gi) || [];
+async function latestUploadIds(uploadsPlaylistId, apiKey) {
+  const items = responseItems(
+    await fetchApi(
+      "playlistItems",
+      {
+        part: "contentDetails",
+        playlistId: uploadsPlaylistId,
+        maxResults: String(MAX_UPLOADS),
+        fields: "items(contentDetails/videoId)",
+      },
+      apiKey,
+      "playlistItems.list",
+    ),
+    "playlistItems.list",
+  );
+  const seen = new Set();
 
-  for (var i = 0; i < tags.length; i++) {
-    var tag = tags[i];
-    var rel = String(getHtmlAttribute(tag, "rel") || "").toLowerCase();
-    var property = String(
-      getHtmlAttribute(tag, "property") || getHtmlAttribute(tag, "name") || "",
-    ).toLowerCase();
-    var pageUrl = null;
+  return items
+    .map((item) => item?.contentDetails?.videoId)
+    .filter((videoId) => {
+      if (!isVideoId(videoId) || seen.has(videoId)) {
+        return false;
+      }
 
-    if (/(?:^|\s)canonical(?:\s|$)/.test(rel)) {
-      pageUrl = getHtmlAttribute(tag, "href");
-    } else if (property === "og:url") {
-      pageUrl = getHtmlAttribute(tag, "content");
-    }
+      seen.add(videoId);
+      return true;
+    });
+}
 
-    var videoId = getVideoIdFromUrl(pageUrl);
+async function videosById(videoIds, apiKey) {
+  if (!videoIds.length) {
+    return [];
+  }
 
-    if (videoId) {
+  return responseItems(
+    await fetchApi(
+      "videos",
+      {
+        part: "snippet,liveStreamingDetails",
+        id: videoIds.join(","),
+        fields:
+          "items(id,snippet(channelId,liveBroadcastContent)," +
+          "liveStreamingDetails(actualStartTime,actualEndTime))",
+      },
+      apiKey,
+      "videos.list",
+    ),
+    "videos.list",
+  );
+}
+
+function activeLiveVideoId(videoIds, videos, channelId) {
+  const indexedVideos = new Map(
+    videos.filter((video) => isVideoId(video?.id)).map((video) => [video.id, video]),
+  );
+
+  for (const videoId of videoIds) {
+    const video = indexedVideos.get(videoId);
+    const details = video?.liveStreamingDetails;
+
+    if (
+      video?.snippet?.channelId === channelId &&
+      video.snippet.liveBroadcastContent === "live" &&
+      details?.actualStartTime &&
+      !details.actualEndTime
+    ) {
       return videoId;
     }
   }
@@ -224,651 +294,141 @@ function getMetadataVideoId(html) {
   return null;
 }
 
-function getRawHtmlVideoId(html) {
-  var match = html.match(
-    /"videoDetails"\s*:\s*\{\s*"videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"/,
-  );
-
-  return match ? match[1] : null;
+function logResult(source, result, details = {}) {
+  console.log("[youtube-live] Resolution result:", {
+    source,
+    live: result.live,
+    videoId: result.videoId || null,
+    ...details,
+  });
 }
 
-function getPlayerVideoId(playerResponse) {
-  var videoId =
-    playerResponse &&
-    playerResponse.videoDetails &&
-    playerResponse.videoDetails.videoId;
-
-  return isVideoId(videoId) ? videoId : null;
+async function storeResult(context, handle, result) {
+  const ttl = result.live
+    ? CACHE_TTL.liveResult
+    : CACHE_TTL.offlineResult;
+  await writeCache(context, "result", handle, result, ttl);
 }
 
-function getLiveStreamabilityVideoId(playerResponse) {
-  var videoId =
-    playerResponse &&
-    playerResponse.playabilityStatus &&
-    playerResponse.playabilityStatus.liveStreamability &&
-    playerResponse.playabilityStatus.liveStreamability
-      .liveStreamabilityRenderer &&
-    playerResponse.playabilityStatus.liveStreamability.liveStreamabilityRenderer
-      .videoId;
-
-  return isVideoId(videoId) ? videoId : null;
+async function storeLiveResult(context, handle, videoId) {
+  const result = { live: true, videoId };
+  await Promise.all([
+    writeCache(
+      context,
+      "known-live",
+      handle,
+      { videoId },
+      CACHE_TTL.knownLive,
+    ),
+    storeResult(context, handle, result),
+  ]);
+  return result;
 }
 
-function getNestedVideoId(renderer) {
-  if (!renderer || typeof renderer !== "object") {
-    return null;
+async function resolveLiveVideo(context, handle, apiKey) {
+  const cached = cachedResolution(await readCache(context, "result", handle));
+
+  if (cached) {
+    logResult("result-cache", cached);
+    return cached;
   }
 
-  if (isVideoId(renderer.videoId)) {
-    return renderer.videoId;
+  const channel = await resolveChannel(context, handle, apiKey);
+
+  if (!channel) {
+    const result = { live: false };
+    await storeResult(context, handle, result);
+    logResult("channel-not-found", result);
+    return result;
   }
 
-  var navigationVideoId =
-    renderer.navigationEndpoint &&
-    renderer.navigationEndpoint.watchEndpoint &&
-    renderer.navigationEndpoint.watchEndpoint.videoId;
-
-  if (isVideoId(navigationVideoId)) {
-    return navigationVideoId;
-  }
-
-  var stack = [renderer];
-
-  while (stack.length) {
-    var value = stack.pop();
-
-    if (!value || typeof value !== "object") {
-      continue;
-    }
-
-    var watchVideoId = value.watchEndpoint && value.watchEndpoint.videoId;
-
-    if (isVideoId(watchVideoId)) {
-      return watchVideoId;
-    }
-
-    var commandUrl =
-      value.commandMetadata &&
-      value.commandMetadata.webCommandMetadata &&
-      value.commandMetadata.webCommandMetadata.url;
-    var commandVideoId = getVideoIdFromUrl(commandUrl);
-
-    if (commandVideoId) {
-      return commandVideoId;
-    }
-
-    if (Array.isArray(value)) {
-      for (var i = value.length - 1; i >= 0; i--) {
-        stack.push(value[i]);
-      }
-
-      continue;
-    }
-
-    var keys = Object.keys(value);
-
-    for (var j = keys.length - 1; j >= 0; j--) {
-      stack.push(value[keys[j]]);
-    }
-  }
-
-  return null;
-}
-
-function collectStringValues(value, result) {
-  if (typeof value === "string") {
-    result.push(value);
-    return;
-  }
-
-  if (!value || typeof value !== "object") {
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    for (var i = 0; i < value.length; i++) {
-      collectStringValues(value[i], result);
-    }
-
-    return;
-  }
-
-  var keys = Object.keys(value);
-
-  for (var j = 0; j < keys.length; j++) {
-    collectStringValues(value[keys[j]], result);
-  }
-}
-
-function inspectLiveSignalText(value, state, allowPlainLive) {
-  var strings = [];
-  collectStringValues(value, strings);
-
-  for (var i = 0; i < strings.length; i++) {
-    var text = strings[i].replace(/\s+/g, " ").trim().toUpperCase();
-
-    if (!text) {
-      continue;
-    }
-
-    if (/\b(?:UPCOMING|PREMIERE|SCHEDULED|STREAMED|ENDED)\b/.test(text)) {
-      state.disqualified = true;
-    }
-
-    if (
-      /\bWATCHING\b/.test(text) ||
-      /\bLIVE NOW\b/.test(text) ||
-      /\bIS LIVE\b/.test(text) ||
-      (allowPlainLive && text === "LIVE")
-    ) {
-      state.live = true;
-    }
-  }
-}
-
-function inspectLiveSignalStyle(style, state) {
-  var normalized = String(style || "").toUpperCase();
-
-  if (/(?:^|_)(?:UPCOMING|PREMIERE|SCHEDULED)$/.test(normalized)) {
-    state.disqualified = true;
-  }
-
-  if (/(?:^|_)LIVE(?:_NOW)?$/.test(normalized)) {
-    state.live = true;
-  }
-}
-
-function inspectAccessibilityLiveSignal(value, state) {
-  var strings = [];
-  collectStringValues(value, strings);
-
-  for (var i = 0; i < strings.length; i++) {
-    var text = strings[i].replace(/\s+/g, " ").trim().toUpperCase();
-
-    if (/\b(?:UPCOMING|PREMIERE|SCHEDULED|STREAMED|ENDED)\b/.test(text)) {
-      state.disqualified = true;
-    }
-
-    if (/\bLIVE NOW\b/.test(text) || /\bIS LIVE\b/.test(text)) {
-      state.live = true;
-    }
-  }
-}
-
-function hasStrongLiveSignal(renderer) {
-  var state = {
-    live: false,
-    disqualified: false,
-  };
-  var stack = [renderer];
-
-  while (stack.length) {
-    var value = stack.pop();
-
-    if (!value || typeof value !== "object") {
-      continue;
-    }
-
-    if (Array.isArray(value)) {
-      for (var i = value.length - 1; i >= 0; i--) {
-        stack.push(value[i]);
-      }
-
-      continue;
-    }
-
-    var keys = Object.keys(value);
-
-    for (var j = keys.length - 1; j >= 0; j--) {
-      var key = keys[j];
-      var child = value[key];
-
-      if (
-        key === "thumbnailOverlayTimeStatusRenderer" ||
-        key === "metadataBadgeRenderer" ||
-        /(?:overlay|badge)/i.test(key)
-      ) {
-        inspectLiveSignalStyle(
-          child && (child.style || child.badgeStyle),
-          state,
-        );
-        inspectLiveSignalText(child, state, true);
-      } else if (/viewCountText$/i.test(key)) {
-        inspectLiveSignalText(child, state, false);
-      } else if (/accessibility/i.test(key)) {
-        inspectAccessibilityLiveSignal(child, state);
-      }
-
-      stack.push(child);
-    }
-  }
-
-  return state.live && !state.disqualified;
-}
-
-function findLiveRendererCandidates(root) {
-  if (!root || typeof root !== "object") {
-    return [];
-  }
-
-  var rendererKeys = {
-    videoRenderer: true,
-    gridVideoRenderer: true,
-    compactVideoRenderer: true,
-    lockupViewModel: true,
-  };
-  var candidates = [];
-  var seen = {};
-  var stack = [root];
-
-  function addRenderer(renderer) {
-    var videoId = getNestedVideoId(renderer);
-
-    if (!videoId || seen[videoId] || !hasStrongLiveSignal(renderer)) {
-      return;
-    }
-
-    seen[videoId] = true;
-    candidates.push(videoId);
-  }
-
-  while (stack.length) {
-    var value = stack.pop();
-
-    if (!value || typeof value !== "object") {
-      continue;
-    }
-
-    if (Array.isArray(value)) {
-      for (var i = value.length - 1; i >= 0; i--) {
-        stack.push(value[i]);
-      }
-
-      continue;
-    }
-
-    var keys = Object.keys(value);
-
-    for (var j = keys.length - 1; j >= 0; j--) {
-      var key = keys[j];
-      var child = value[key];
-
-      if (rendererKeys[key]) {
-        addRenderer(child);
-      } else if (key === "watchEndpoint") {
-        addRenderer(value);
-      }
-
-      stack.push(child);
-    }
-  }
-
-  return candidates;
-}
-
-function getText(value) {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  if (!value || typeof value !== "object") {
-    return "";
-  }
-
-  if (typeof value.simpleText === "string") {
-    return value.simpleText;
-  }
-
-  if (Array.isArray(value.runs)) {
-    return value.runs
-      .map(function (run) {
-        return run && typeof run.text === "string" ? run.text : "";
-      })
-      .join("");
-  }
-
-  return "";
-}
-
-function findSelectedLiveTabBrowseEndpoint(root) {
-  if (!root || typeof root !== "object") {
-    return null;
-  }
-
-  var stack = [root];
-
-  while (stack.length) {
-    var value = stack.pop();
-
-    if (!value || typeof value !== "object") {
-      continue;
-    }
-
-    var tab = value.tabRenderer;
-
-    if (tab && tab.selected === true) {
-      var title = getText(tab.title).trim().toLowerCase();
-      var identifier = String(tab.tabIdentifier || "").toLowerCase();
-      var endpoint = tab.endpoint || tab.navigationEndpoint;
-      var browseEndpoint = endpoint && endpoint.browseEndpoint;
-
-      if (
-        (title === "live" || identifier === "live") &&
-        browseEndpoint &&
-        typeof browseEndpoint.browseId === "string" &&
-        browseEndpoint.browseId &&
-        typeof browseEndpoint.params === "string" &&
-        browseEndpoint.params
-      ) {
-        return {
-          browseId: browseEndpoint.browseId,
-          params: browseEndpoint.params,
-        };
-      }
-    }
-
-    if (Array.isArray(value)) {
-      for (var i = value.length - 1; i >= 0; i--) {
-        stack.push(value[i]);
-      }
-
-      continue;
-    }
-
-    var keys = Object.keys(value);
-
-    for (var j = keys.length - 1; j >= 0; j--) {
-      stack.push(value[keys[j]]);
-    }
-  }
-
-  return null;
-}
-
-async function fetchLiveTabBrowseData(html, browseEndpoint) {
-  var apiKey = extractStringField(html, "INNERTUBE_API_KEY");
-  var clientVersion = extractStringField(html, "INNERTUBE_CLIENT_VERSION");
-  var innertubeContext = extractInnertubeContext(html);
-
-  if (!apiKey || !clientVersion || !innertubeContext) {
-    throw new Error("YouTube Innertube configuration was incomplete.");
-  }
-
-  var headers = getBrowserHeaders();
-  headers.Accept = "*/*";
-  headers["Content-Type"] = "application/json";
-  headers["X-YouTube-Client-Version"] = clientVersion;
-
-  var response = await fetch(
-    "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false&key=" +
-      encodeURIComponent(apiKey),
-    {
-      method: "POST",
-      headers: headers,
-      redirect: "follow",
-      body: JSON.stringify({
-        context: innertubeContext,
-        browseId: browseEndpoint.browseId,
-        params: browseEndpoint.params,
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "YouTube browse request failed with HTTP " + response.status + ".",
+  const knownLive = await readCache(context, "known-live", handle);
+  const knownVideoId = isVideoId(knownLive?.videoId)
+    ? knownLive.videoId
+    : null;
+
+  if (knownVideoId) {
+    const verifiedVideoId = activeLiveVideoId(
+      [knownVideoId],
+      await videosById([knownVideoId], apiKey),
+      channel.channelId,
     );
-  }
 
-  return response.json();
-}
-
-function getCandidateResolution(
-  responseUrl,
-  playerResponse,
-  initialDataVideoId,
-  browseVideoId,
-  html,
-) {
-  var candidates = [
-    { videoId: getVideoIdFromUrl(responseUrl), source: "redirect_url" },
-    { videoId: getPlayerVideoId(playerResponse), source: "player_response" },
-    {
-      videoId: getLiveStreamabilityVideoId(playerResponse),
-      source: "live_streamability",
-    },
-    { videoId: initialDataVideoId, source: "initial_data" },
-    { videoId: browseVideoId, source: "innertube_browse" },
-    { videoId: getMetadataVideoId(html), source: "metadata" },
-    { videoId: getRawHtmlVideoId(html), source: "raw_html" },
-  ];
-
-  for (var i = 0; i < candidates.length; i++) {
-    if (candidates[i].videoId) {
-      return candidates[i];
+    if (verifiedVideoId) {
+      const result = await storeLiveResult(context, handle, verifiedVideoId);
+      logResult("known-live-cache", result);
+      return result;
     }
+
+    await deleteCache(context, "known-live", handle);
   }
 
-  return {
-    videoId: null,
-    source: "none",
-  };
-}
+  const videoIds = await latestUploadIds(channel.uploadsPlaylistId, apiKey);
+  const videoId = activeLiveVideoId(
+    videoIds,
+    await videosById(videoIds, apiKey),
+    channel.channelId,
+  );
 
-function getDiagnosticUrl(value) {
-  try {
-    var url = new URL(value);
-    var videoId = getVideoIdFromUrl(url.href);
-
-    url.search = videoId && url.pathname === "/watch" ? "?v=" + videoId : "";
-    url.hash = "";
-
-    return url.href;
-  } catch (err) {
-    return null;
-  }
-}
-
-function getStructuredLiveStatus(playerResponse, videoId) {
-  if (!playerResponse || typeof playerResponse !== "object") {
-    return null;
+  if (videoId) {
+    const result = await storeLiveResult(context, handle, videoId);
+    logResult("uploads-playlist", result, { uploadsChecked: videoIds.length });
+    return result;
   }
 
-  var playerVideoId = getPlayerVideoId(playerResponse);
-  var streamabilityVideoId = getLiveStreamabilityVideoId(playerResponse);
-
-  if (playerVideoId !== videoId && streamabilityVideoId !== videoId) {
-    return null;
-  }
-
-  var videoDetails = playerResponse.videoDetails || {};
-  var playabilityStatus = playerResponse.playabilityStatus || {};
-  var microformatRenderer =
-    playerResponse.microformat &&
-    playerResponse.microformat.playerMicroformatRenderer;
-  var liveBroadcastDetails =
-    microformatRenderer && microformatRenderer.liveBroadcastDetails;
-
-  if (
-    liveBroadcastDetails &&
-    typeof liveBroadcastDetails.isLiveNow === "boolean"
-  ) {
-    return liveBroadcastDetails.isLiveNow;
-  }
-
-  if (playabilityStatus.status === "LIVE_STREAM_OFFLINE") {
-    return false;
-  }
-
-  if (videoDetails.isLiveContent === false) {
-    return false;
-  }
-
-  var liveStreamability = playabilityStatus.liveStreamability;
-
-  if (
-    videoDetails.isLiveContent === true &&
-    liveStreamability &&
-    typeof liveStreamability === "object" &&
-    Object.keys(liveStreamability).length > 0
-  ) {
-    return true;
-  }
-
-  return null;
+  const result = { live: false };
+  await storeResult(context, handle, result);
+  console.warn("[youtube-live] No active broadcast found in latest uploads.", {
+    channelId: channel.channelId,
+    uploadsChecked: videoIds.length,
+  });
+  logResult("uploads-playlist", result, { uploadsChecked: videoIds.length });
+  return result;
 }
 
 export async function onRequestGet(context) {
-  var requestUrl = new URL(context.request.url);
-  var handle = normalizeHandle(requestUrl.searchParams.get("handle"));
+  const requestUrl = new URL(context.request.url);
+  const handle = normalizeHandle(requestUrl.searchParams.get("handle"));
 
   if (!handle) {
     return jsonResponse(
-      {
-        error: "Missing or invalid YouTube handle.",
-      },
+      { error: "Missing or invalid YouTube handle." },
       400,
     );
   }
 
-  var youtubeLiveUrl =
-    "https://www.youtube.com/@" + encodeURIComponent(handle) + "/live";
+  const apiKey = String(context.env?.YOUTUBE_API_KEY || "").trim();
 
-  try {
-    var response = await fetch(youtubeLiveUrl, {
-      headers: getBrowserHeaders(),
-      redirect: "follow",
-    });
-
-    if (!response.ok) {
-      return jsonResponse(
-        {
-          error: "YouTube returned an unexpected response.",
-        },
-        502,
-      );
-    }
-
-    var html = await response.text();
-    var playerResponse = extractInitialPlayerResponse(html);
-    var initialData = extractInitialData(html);
-
-    if (!playerResponse) {
-      console.warn(
-        "[youtube-live] Structured player data could not be parsed from the live page.",
-      );
-    }
-
-    var initialDataCandidates = findLiveRendererCandidates(initialData);
-    var initialDataVideoId = initialDataCandidates[0] || null;
-    var browseVideoId = null;
-    var higherPriorityVideoId =
-      getVideoIdFromUrl(response.url) ||
-      getPlayerVideoId(playerResponse) ||
-      getLiveStreamabilityVideoId(playerResponse);
-
-    if (!higherPriorityVideoId && !initialDataVideoId) {
-      var liveTabBrowseEndpoint =
-        findSelectedLiveTabBrowseEndpoint(initialData);
-
-      if (liveTabBrowseEndpoint) {
-        var browseData = await fetchLiveTabBrowseData(
-          html,
-          liveTabBrowseEndpoint,
-        );
-        var browseCandidates = findLiveRendererCandidates(browseData);
-        browseVideoId = browseCandidates[0] || null;
-      }
-    }
-
-    var resolution = getCandidateResolution(
-      response.url,
-      playerResponse,
-      initialDataVideoId,
-      browseVideoId,
-      html,
-    );
-    var videoId = resolution.videoId;
-
-    console.log("[youtube-live] Resolution result:", {
-      finalUrl: getDiagnosticUrl(response.url),
-      hasPlayerResponse: Boolean(playerResponse),
-      hasInitialData: Boolean(initialData),
-      initialDataCandidateCount: initialDataCandidates.length,
-      selectedInitialDataVideoId: initialDataVideoId,
-      selectedSource: resolution.source,
-      selectedVideoId: videoId,
-    });
-
-    if (!videoId) {
-      console.warn("[youtube-live] No candidate video ID was found.");
-
-      return jsonResponse({
-        live: false,
-      });
-    }
-
-    var requiresWatchVerification =
-      resolution.source === "initial_data" ||
-      resolution.source === "innertube_browse";
-    var live = requiresWatchVerification
-      ? null
-      : getStructuredLiveStatus(playerResponse, videoId);
-
-    if (live === null) {
-      var watchResponse = await fetch(
-        "https://www.youtube.com/watch?v=" + encodeURIComponent(videoId),
-        {
-          headers: getBrowserHeaders(),
-          redirect: "follow",
-        },
-      );
-
-      if (!watchResponse.ok) {
-        return jsonResponse(
-          {
-            error: "YouTube returned an unexpected response.",
-          },
-          502,
-        );
-      }
-
-      var watchHtml = await watchResponse.text();
-      var watchPlayerResponse = extractInitialPlayerResponse(watchHtml);
-
-      if (!watchPlayerResponse) {
-        console.warn(
-          "[youtube-live] Structured player data could not be parsed from the watch page.",
-        );
-      }
-
-      live = getStructuredLiveStatus(watchPlayerResponse, videoId);
-    }
-
-    if (live !== true) {
-      console.warn(
-        "[youtube-live] Candidate video " +
-          videoId +
-          " was found but is not currently live.",
-      );
-
-      return jsonResponse({
-        live: false,
-      });
-    }
-
-    return jsonResponse({
-      live: true,
-      videoId: videoId,
-    });
-  } catch (err) {
-    console.warn("[youtube-live] Failed to inspect YouTube live data.");
-
+  if (!apiKey) {
+    console.warn("[youtube-live] YOUTUBE_API_KEY is not configured.");
     return jsonResponse(
-      {
-        error: "Could not inspect the YouTube live page.",
-      },
+      { error: "Could not resolve the YouTube live stream." },
       502,
     );
+  }
+
+  const resolutionKey = handle.toLowerCase();
+  let resolutionPromise = inFlightResolutions.get(resolutionKey);
+
+  if (!resolutionPromise) {
+    resolutionPromise = resolveLiveVideo(context, handle, apiKey);
+    inFlightResolutions.set(resolutionKey, resolutionPromise);
+  }
+
+  try {
+    return jsonResponse(await resolutionPromise);
+  } catch (error) {
+    console.warn("[youtube-live] YouTube Data API resolution failed.", {
+      stage: error?.stage || "unknown",
+      status: error?.status || null,
+    });
+    return jsonResponse(
+      { error: "Could not resolve the YouTube live stream." },
+      502,
+    );
+  } finally {
+    if (inFlightResolutions.get(resolutionKey) === resolutionPromise) {
+      inFlightResolutions.delete(resolutionKey);
+    }
   }
 }
