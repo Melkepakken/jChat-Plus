@@ -209,6 +209,7 @@ function getCandidateVideoId(responseUrl, playerResponse, html) {
   return (
     getVideoIdFromUrl(responseUrl) ||
     getPlayerVideoId(playerResponse) ||
+    getLiveStreamabilityVideoId(playerResponse) ||
     getMetadataVideoId(html) ||
     getRawHtmlVideoId(html)
   );
@@ -304,6 +305,14 @@ export async function onRequestGet(context) {
     }
 
     var videoId = getCandidateVideoId(response.url, playerResponse, html);
+    console.log("[youtube-live] Resolution result:", {
+      finalUrl: response.url,
+      hasPlayerResponse: Boolean(playerResponse),
+      playerVideoId: getPlayerVideoId(playerResponse),
+      streamabilityVideoId: getLiveStreamabilityVideoId(playerResponse),
+      metadataVideoId: getMetadataVideoId(html),
+      selectedVideoId: videoId,
+    });
 
     if (!videoId) {
       console.warn("[youtube-live] No candidate video ID was found.");
