@@ -4,7 +4,7 @@
 [![Website](https://img.shields.io/website-up-down-green-red/https/chat.melkepakken.tv.svg)](https://chat.melkepakken.tv/)
 [![License](https://img.shields.io/github/license/Melkepakken/jchat-plus)](LICENSE)
 
-**jChat+** is a modernized fork of [jChat](https://github.com/giambaJ/jChat) with Twitch + Kick support, updated Twitch integrations, preview mode, improved badge and emote handling, 7TV cosmetics, emoji rendering options, username color controls, and streamer-focused customization.
+**jChat+** is a modernized fork of [jChat](https://github.com/giambaJ/jChat) with Twitch + Kick + YouTube support, updated Twitch integrations, preview mode, improved badge and emote handling, 7TV cosmetics, emoji rendering options, username color controls, and streamer-focused customization.
 
 The public hosted version is available at:
 
@@ -20,9 +20,19 @@ This project is based on the original jChat by **giambaJ**. Huge credit to the o
 
 ### jChat+ additions
 
-* Twitch + Kick chat support in one overlay
+* Twitch + Kick + YouTube chat support in one overlay
 * New setup page for generating overlay URLs
 * Preview mode for testing appearance and behavior without needing live chat
+* Public YouTube live broadcast discovery from a handle or channel URL
+* Direct YouTube video ID and URL support for unlisted live streams
+* Explicit, unfiltered YouTube Live Chat instead of Top Chat
+* Ordinary YouTube messages with deterministic username colours
+* YouTube custom emoji plus ordinary Unicode emoji using the existing Twemoji or Native setting
+* YouTube moderator message deletion and user retraction handling
+* YouTube bot, hidden-command, and blocked-user filtering
+* Temporary YouTube connection retry
+* Automatic return to YouTube handle discovery after a stream ends when a fallback channel is configured
+* Simulated YouTube preview messages
 * Kick channel auto-resolve with `kick=true`, `kick=<channel>`, or `kick_channel=<channel>`
 * Manual Kick chatroom override with `kick_room=<roomId>`
 * Kick message deletion support
@@ -89,6 +99,36 @@ https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick=true
 https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick=yourkickchannel
 ```
 
+### Twitch + YouTube using the effective same channel
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&youtube=true
+```
+
+### Twitch + explicit YouTube handle
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&youtube=youryoutubehandle
+```
+
+### Twitch + unlisted YouTube stream
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&youtube_video=VIDEO_ID
+```
+
+### Twitch + Kick + YouTube
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick=true&youtube=true
+```
+
+### Direct YouTube video with fallback handle
+
+```txt
+https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&youtube=youryoutubehandle&youtube_video=VIDEO_ID
+```
+
 ### Manual Kick room ID fallback
 
 ```txt
@@ -100,7 +140,7 @@ https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick_room=3180237
 Preview mode can be used to test the overlay without relying on live chat messages.
 
 ```txt
-https://chat.melkepakken.tv/v2/?preview=true&channel=twitch&kick=kick&size=3&font=0&shadow=2&animate=true
+https://chat.melkepakken.tv/v2/?preview=true&channel=twitch&kick=kick&youtube=true&size=3&font=0&shadow=2&animate=true
 ```
 
 The neutral preview values are intentionally:
@@ -108,9 +148,10 @@ The neutral preview values are intentionally:
 ```txt
 channel=twitch
 kick=kick
+youtube=true
 ```
 
-This lets Twitch preview messages use the official `twitch` channel and Kick preview messages use the official `kick` channel.
+This rotates simulated Twitch, Kick, and YouTube messages without connecting to a real YouTube stream.
 
 ### Example OBS URL
 
@@ -130,7 +171,7 @@ Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showin
 
 ## Self-hosting
 
-jChat+ is a static browser-based overlay.
+Twitch and Kick can be served as a static browser-based overlay.
 
 Run it locally with a simple static server:
 
@@ -146,7 +187,19 @@ http://localhost:3000/v2/?channel=yourtwitchchannel
 
 For OBS, add the URL as a **Browser Source**.
 
-No build step is required.
+YouTube uses Cloudflare Pages Functions. Run the local Pages runtime with Wrangler:
+
+```bash
+npx wrangler pages dev .
+```
+
+Then open:
+
+```txt
+http://localhost:8788/v2/?channel=yourtwitchchannel&youtube=true
+```
+
+This does not introduce a build process. Wrangler is only the local Cloudflare Pages runtime. The Python static server remains enough for Twitch and Kick.
 
 ---
 
@@ -208,6 +261,8 @@ The public deployment uses:
 Cloudflare Pages
 chat.melkepakken.tv
 /functions/api/twitch/[[path]].js
+/functions/api/youtube/live.js
+/functions/api/youtube/chat.js
 ```
 
 The Cloudflare Function proxies the Twitch Helix endpoints used by jChat+:
@@ -218,6 +273,13 @@ The Cloudflare Function proxies the Twitch Helix endpoints used by jChat+:
 /api/twitch/chat/badges
 /api/twitch/bits/cheermotes
 ```
+
+The YouTube Functions serve different parts of the public web chat connector:
+
+* `functions/api/youtube/live.js` resolves the current public broadcast for a handle.
+* `functions/api/youtube/chat.js` reads explicit Live Chat messages, custom emoji, and deletion actions.
+
+The YouTube connector reads public web chat data through Cloudflare Functions. It is not an official YouTube API integration and requires no new Cloudflare secrets.
 
 Required Cloudflare environment variables/secrets:
 
@@ -243,7 +305,15 @@ The frontend should never expose `TWITCH_CLIENT_SECRET`.
 | `kick`         | `kick=velcuz`         | Resolve a specific Kick channel                       |
 | `kick_channel` | `kick_channel=velcuz` | Alternative Kick channel parameter                    |
 | `kick_room`    | `kick_room=3180237`   | Manual Kick chatroom ID override                      |
+| `youtube`      | `youtube=true`        | Use the specific Kick channel when available, otherwise the Twitch channel |
+| `youtube`      | `youtube=handle`      | Resolve the current public live broadcast for a YouTube handle |
+| `youtube`      | `youtube=https://www.youtube.com/@handle` | Resolve a YouTube channel URL |
+| `youtube_video` | `youtube_video=VIDEO_ID` | Connect directly to a live video, including an unlisted stream |
+| `youtube_video` | `youtube_video=https://youtu.be/VIDEO_ID` | Connect directly using a YouTube watch, live, or `youtu.be` URL |
+| `youtube`      | `youtube=false`       | Explicitly disable YouTube                             |
 | `preview`      | `preview=true`        | Enable preview mode                                   |
+
+`youtube_video` takes initial priority. If `youtube` is also present, jChat+ returns to public handle discovery after the direct stream ends.
 
 ### Appearance
 
@@ -303,6 +373,43 @@ Known limitation:
 
 ---
 
+## YouTube support details
+
+jChat+ connects to public YouTube web chat through Cloudflare Pages Functions. Public streams can be discovered by handle; unlisted streams require `youtube_video`.
+
+Current YouTube support includes:
+
+* Explicit Live Chat, with no silent fallback to Top Chat
+* Ordinary text messages
+* YouTube custom emoji
+* Ordinary Unicode emoji through the selected Twemoji or Native setting
+* Deterministic username colours
+* Individual moderator message deletion
+* User message retraction
+* Bot filtering
+* Command filtering
+* Blocked users
+* Automatic public live discovery
+* Direct unlisted video support
+* Temporary reconnect handling
+* Stream-end rediscovery when a fallback YouTube channel is configured
+
+Planned YouTube additions:
+
+* YouTube badges
+* Membership styling
+* Super Chat styling
+* Super Stickers
+* Profile pictures
+
+These will be added in a later update.
+
+Current limitation:
+
+* YouTube polling follows the continuation timing returned by YouTube and may be behind the visible web chat.
+
+---
+
 ## v2 module structure
 
 The v2 overlay is split into plain browser scripts loaded directly from `v2/index.html`.
@@ -318,18 +425,17 @@ Main modules:
 | `js/chat-core.js`        | Query parsing, shared state, and shared helpers                       |
 | `js/chat-twitch-api.js`  | Twitch API helper using local credentials or `/api/twitch`            |
 | `js/chat-styles.js`      | Overlay style loading and static style application                    |
-| `js/chat-preview.js`     | Preview mode, preview timing, and setup-page preview updates          |
+| `js/chat-preview.js`     | Twitch, Kick, and YouTube simulated preview rotation and setup-page updates |
 | `js/chat-emotes.js`      | BTTV, FFZ, and 7TV emote loading                                      |
 | `js/chat-seventv.js`     | 7TV badges, paints, cosmetics, gradients, and shadows                 |
 | `js/chat-badges.js`      | Generic badge helpers and user badge loading                          |
 | `js/chat-kick-badges.js` | Kick badge parsing, fallback badges, and subscriber badge caching     |
 | `js/chat-kick.js`        | Kick chat connection, delete handling, emote parsing, and `writeKick` |
+| `js/chat-youtube.js`     | YouTube source selection, live discovery, polling, filtering, custom emoji, deletions, and lifecycle handling |
 | `js/chat-loader.js`      | Twitch channel lookup and resource loading                            |
 | `js/chat-renderer.js`    | Chat line rendering and cleanup                                       |
 | `js/chat-twitch.js`      | Twitch IRC connection and message handling                            |
 | `js/chat-bootstrap.js`   | Overlay startup and preview message listener                          |
-
-`v2/script.js` is deleted and no longer used.
 
 ---
 
@@ -357,7 +463,9 @@ jChat+ is a fork of the original [jChat](https://github.com/giambaJ/jChat) by **
 
 Original project credit, structure, and core idea belong to giambaJ.
 
-jChat+ adds modernized Twitch integrations, Kick support, Cloudflare deployment support, preview mode, improved badge/emote handling, 7TV cosmetics, and additional streamer-focused customization.
+jChat+ is not affiliated with [Twitch](https://www.twitch.tv/), [Kick](https://kick.com/), or [YouTube](https://www.youtube.com/).
+
+jChat+ adds modernized Twitch integrations, Kick and YouTube support, Cloudflare deployment support, preview mode, improved badge/emote handling, 7TV cosmetics, and additional streamer-focused customization.
 
 ---
 

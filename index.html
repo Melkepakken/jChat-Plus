@@ -4,25 +4,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>jChat+ &bull; Free Twitch + Kick Chat Overlay for OBS</title>
+  <title>jChat+ &bull; Free Twitch, Kick + YouTube Chat Overlay for OBS</title>
   <meta name="description"
-    content="Create a free, open-source Twitch and Kick chat overlay for OBS, XSplit, Meld, and Streamlabs Desktop. Customize emotes, badges, fonts, and effects." />
+    content="Create a free, open-source Twitch, Kick and YouTube chat overlay for OBS, XSplit, Meld and Streamlabs Desktop. Customize emotes, badges, fonts and effects." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://chat.melkepakken.tv/" />
 
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="jChat+" />
-  <meta property="og:title" content="jChat+ • Free Twitch + Kick Chat Overlay for OBS" />
+  <meta property="og:title" content="jChat+ • Free Twitch, Kick + YouTube Chat Overlay for OBS" />
   <meta property="og:description"
-    content="Create a free, open-source Twitch and Kick chat overlay for OBS, XSplit, Meld, and Streamlabs Desktop." />
+    content="Create a free, open-source Twitch, Kick and YouTube chat overlay for OBS, XSplit, Meld and Streamlabs Desktop. Customize emotes, badges, fonts and effects." />
   <meta property="og:url" content="https://chat.melkepakken.tv/" />
   <meta property="og:image" content="https://chat.melkepakken.tv/img/peepoHappy_plus.png" />
   <meta property="og:image:alt" content="jChat+ logo" />
 
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="jChat+ • Free Twitch + Kick Chat Overlay for OBS" />
+  <meta name="twitter:title" content="jChat+ • Free Twitch, Kick + YouTube Chat Overlay for OBS" />
   <meta name="twitter:description"
-    content="Create a free, open-source Twitch and Kick chat overlay for OBS, XSplit, Meld, and Streamlabs Desktop." />
+    content="Create a free, open-source Twitch, Kick and YouTube chat overlay for OBS, XSplit, Meld and Streamlabs Desktop. Customize emotes, badges, fonts and effects." />
   <meta name="twitter:image" content="https://chat.melkepakken.tv/img/peepoHappy_plus.png" />
   <meta name="twitter:image:alt" content="jChat+ logo" />
 
@@ -38,7 +38,7 @@
       "@type": "WebApplication",
       "name": "jChat+",
       "url": "https://chat.melkepakken.tv/",
-      "description": "A free and open-source browser-source chat overlay for Twitch and Kick.",
+      "description": "A free and open-source browser-source chat overlay for Twitch, Kick and YouTube.",
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Any platform with browser-source streaming software",
       "isAccessibleForFree": true,
@@ -65,19 +65,20 @@
   <main>
     <div id="intro">
       <p>
-        <em>jChat+</em> is a Twitch and Kick chat overlay for OBS, XSplit,
+        <em>jChat+</em> is a Twitch, Kick and YouTube chat overlay for OBS, XSplit,
         Meld, Streamlabs Desktop and any other streaming software that
         supports browser sources. It supports
         <a href="https://betterttv.com/" target="_blank">BetterTTV</a>,
         <a href="https://www.frankerfacez.com/" target="_blank">FrankerFaceZ</a>
         and <a href="https://7tv.app/" target="_blank">7TV</a> emotes, Twitch
-        badges, Kick badges, Kick emotes, smooth message animation, message
-        fading, custom fonts, shadows, strokes and more.
+        badges, Kick badges and emotes, YouTube Live Chat messages and custom
+        emoji, smooth message animation, message fading, custom fonts, shadows,
+        strokes and more.
       </p>
 
       <p>
-        Use this setup page to generate a browser source URL. Enable Kick if
-        you want Twitch and Kick chat in the same overlay.
+        Use this setup page to generate a browser source URL. You can combine
+        Kick or YouTube with Twitch in the same overlay.
       </p>
     </div>
 
@@ -107,6 +108,35 @@
               <div class="kick_channel_control">
                 <input type="text" id="kick_channel" name="kick_channel" placeholder="Kick channel" />
                 <span class="help_text">Blank = same as Twitch channel</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings_group">
+            <h4>YouTube</h4>
+
+            <div class="form_row toggle_row">
+              <label for="youtube_enabled">Enable YouTube</label>
+              <input type="checkbox" id="youtube_enabled" name="youtube_enabled" />
+            </div>
+
+            <div id="youtube_channel_row" class="kick_channel_block hidden">
+              <label for="youtube_channel">YouTube handle</label>
+
+              <div class="kick_channel_control">
+                <input type="text" id="youtube_channel" name="youtube_channel"
+                  placeholder="YouTube handle" />
+                <span class="help_text">Blank = same as Kick or Twitch</span>
+              </div>
+            </div>
+
+            <div id="youtube_video_row" class="kick_channel_block hidden">
+              <label for="youtube_video">Live video</label>
+
+              <div class="kick_channel_control">
+                <input type="text" id="youtube_video" name="youtube_video"
+                  placeholder="Video ID or URL" />
+                <span class="help_text">For unlisted streams</span>
               </div>
             </div>
           </div>
@@ -327,8 +357,9 @@
 
         <p>
           This application is not affiliated with
-          <a href="https://www.twitch.tv/" target="_blank">Twitch</a> or
-          <a href="https://kick.com/" target="_blank">Kick</a>.
+          <a href="https://www.twitch.tv/" target="_blank">Twitch</a>,
+          <a href="https://kick.com/" target="_blank">Kick</a> or
+          <a href="https://www.youtube.com/" target="_blank">YouTube</a>.
         </p>
 
         <p>

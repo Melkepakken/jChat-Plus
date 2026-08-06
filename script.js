@@ -24,6 +24,18 @@ function kickOption() {
   }
 }
 
+function youtubeOption() {
+  const rows = $youtube_channel_row.add($youtube_video_row);
+
+  if ($youtube_enabled.is(":checked")) {
+    rows.removeClass("hidden");
+  } else {
+    rows.addClass("hidden");
+    $youtube_channel.val("");
+    $youtube_video.val("");
+  }
+}
+
 function advancedOption() {
   const rows = $advanced_block_row
     .add($advanced_ffz_room_row)
@@ -58,6 +70,30 @@ function getKickValue() {
   return "true";
 }
 
+function getYouTubeValue() {
+  if (!$youtube_enabled.is(":checked")) {
+    return false;
+  }
+
+  const youtubeChannel = $youtube_channel.val().trim();
+
+  if (!youtubeChannel) {
+    return "true";
+  }
+
+  const normalizedChannel = youtubeChannel.replace(/^@+/, "");
+
+  return normalizedChannel || "true";
+}
+
+function getYouTubeVideoValue() {
+  if (!$youtube_enabled.is(":checked")) {
+    return false;
+  }
+
+  return $youtube_video.val().trim() || false;
+}
+
 function getOverlayChannel(options) {
   const isPreview = options && options.preview;
   const channel = $channel.val().trim();
@@ -87,6 +123,8 @@ function getOverlayData(options) {
     fade: $fade_bool.is(":checked") ? $fade.val().trim() : false,
     small_caps: $small_caps.is(":checked"),
     kick: getKickValue(),
+    youtube: getYouTubeValue(),
+    youtube_video: getYouTubeVideoValue(),
     emoji: $emoji.val() || false,
     seventv_paints: $seventv_paints.is(":checked"),
     cN: $force_color_bool.is(":checked") ? $force_color.val() : false,
@@ -237,6 +275,10 @@ function resetForm() {
   $kick_enabled.prop("checked", true);
   $kick_channel.val("");
 
+  $youtube_enabled.prop("checked", false);
+  $youtube_channel.val("");
+  $youtube_video.val("");
+
   $animate.prop("checked", true);
   $fade_bool.prop("checked", false);
   $fade.val("30");
@@ -254,6 +296,7 @@ function resetForm() {
   $ffz_user_badges.prop("checked", false);
 
   kickOption();
+  youtubeOption();
   advancedOption();
   forceColorOption();
   fadeOption();
@@ -304,6 +347,12 @@ const $kick_enabled = $('input[name="kick_enabled"]');
 const $kick_channel = $('input[name="kick_channel"]');
 const $kick_channel_row = $("#kick_channel_row");
 
+const $youtube_enabled = $('input[name="youtube_enabled"]');
+const $youtube_channel = $('input[name="youtube_channel"]');
+const $youtube_video = $('input[name="youtube_video"]');
+const $youtube_channel_row = $("#youtube_channel_row");
+const $youtube_video_row = $("#youtube_video_row");
+
 const $animate = $('input[name="animate"]');
 const $fade_bool = $("input[name='fade_bool']");
 const $fade = $("input[name='fade']");
@@ -342,6 +391,12 @@ $kick_enabled.change(function () {
   schedulePreviewUpdate();
 });
 
+$youtube_enabled.change(function () {
+  youtubeOption();
+  schedulePreviewUpdate();
+  markUrlStale();
+});
+
 $advanced_enabled.change(function () {
   advancedOption();
 });
@@ -351,8 +406,13 @@ $force_color_bool.change(function () {
   schedulePreviewUpdate();
 });
 
-const $url_only_inputs = $channel.add($kick_channel);
-const $preview_ignored_inputs = $url_only_inputs.add($advanced_enabled);
+const $url_only_inputs = $channel
+  .add($kick_channel)
+  .add($youtube_channel)
+  .add($youtube_video);
+const $preview_ignored_inputs = $url_only_inputs
+  .add($advanced_enabled)
+  .add($youtube_enabled);
 
 $generator
   .find("input, select")
@@ -375,6 +435,7 @@ $url.click(copyUrl);
 $reset.click(resetForm);
 
 kickOption();
+youtubeOption();
 advancedOption();
 forceColorOption();
 updateOverlayPreview({ forceSrc: true });
