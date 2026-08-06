@@ -1,11 +1,14 @@
 const YOUTUBE_API_ROOT = "https://www.googleapis.com/youtube/v3/";
 const MAX_UPLOADS = 50;
 const CACHE_VERSION = "v1";
+const SEARCH_DISABLED_CACHE_KEY = "global";
 const CACHE_TTL = {
   channel: 3 * 24 * 60 * 60,
   knownLive: 24 * 60 * 60,
   liveResult: 60,
   offlineResult: 5 * 60,
+  searchMiss: 60 * 60,
+  searchDisabled: 6 * 60 * 60,
 };
 const inFlightResolutions = new Map();
 
@@ -31,11 +34,12 @@ function isVideoId(value) {
   return /^[a-zA-Z0-9_-]{11}$/.test(String(value || ""));
 }
 
-function apiError(stage, status = null) {
+function apiError(stage, status = null, reason = null) {
   const error = new Error("YouTube Data API request failed.");
   error.name = "YouTubeApiError";
   error.stage = stage;
   error.status = status;
+  error.reason = reason;
   return error;
 }
 
@@ -60,7 +64,20 @@ async function fetchApi(path, params, apiKey, stage) {
   }
 
   if (!response.ok) {
-    throw apiError(stage, response.status);
+    let reason = null;
+
+    try {
+      const errorData = await response.json();
+      const firstReason = errorData?.error?.errors?.[0]?.reason;
+
+      if (typeof firstReason === "string") {
+        reason = firstReason;
+      }
+    } catch {
+      // The status and stage are enough when Google does not return JSON.
+    }
+
+    throw apiError(stage, response.status, reason);
   }
 
   try {
@@ -250,6 +267,37 @@ async function latestUploadIds(uploadsPlaylistId, apiKey) {
     });
 }
 
+async function searchLiveVideoIds(channelId, apiKey) {
+  const items = responseItems(
+    await fetchApi(
+      "search",
+      {
+        part: "snippet",
+        channelId,
+        eventType: "live",
+        type: "video",
+        maxResults: "5",
+        fields: "items(id/videoId)",
+      },
+      apiKey,
+      "search.list",
+    ),
+    "search.list",
+  );
+  const seen = new Set();
+
+  return items
+    .map((item) => item?.id?.videoId)
+    .filter((videoId) => {
+      if (!isVideoId(videoId) || seen.has(videoId)) {
+        return false;
+      }
+
+      seen.add(videoId);
+      return true;
+    });
+}
+
 async function videosById(videoIds, apiKey) {
   if (!videoIds.length) {
     return [];
@@ -274,7 +322,9 @@ async function videosById(videoIds, apiKey) {
 
 function activeLiveVideoId(videoIds, videos, channelId) {
   const indexedVideos = new Map(
-    videos.filter((video) => isVideoId(video?.id)).map((video) => [video.id, video]),
+    videos
+      .filter((video) => isVideoId(video?.id))
+      .map((video) => [video.id, video]),
   );
 
   for (const videoId of videoIds) {
@@ -304,24 +354,42 @@ function logResult(source, result, details = {}) {
 }
 
 async function storeResult(context, handle, result) {
-  const ttl = result.live
-    ? CACHE_TTL.liveResult
-    : CACHE_TTL.offlineResult;
+  const ttl = result.live ? CACHE_TTL.liveResult : CACHE_TTL.offlineResult;
   await writeCache(context, "result", handle, result, ttl);
 }
 
 async function storeLiveResult(context, handle, videoId) {
   const result = { live: true, videoId };
   await Promise.all([
-    writeCache(
-      context,
-      "known-live",
-      handle,
-      { videoId },
-      CACHE_TTL.knownLive,
-    ),
+    writeCache(context, "known-live", handle, { videoId }, CACHE_TTL.knownLive),
     storeResult(context, handle, result),
   ]);
+  return result;
+}
+
+async function resolveFromUploads(
+  context,
+  handle,
+  apiKey,
+  channel,
+  source = "uploads-playlist",
+) {
+  const videoIds = await latestUploadIds(channel.uploadsPlaylistId, apiKey);
+  const videoId = activeLiveVideoId(
+    videoIds,
+    await videosById(videoIds, apiKey),
+    channel.channelId,
+  );
+
+  if (videoId) {
+    const result = await storeLiveResult(context, handle, videoId);
+    logResult(source, result, { uploadsChecked: videoIds.length });
+    return result;
+  }
+
+  const result = { live: false };
+  await storeResult(context, handle, result);
+  logResult(source, result, { uploadsChecked: videoIds.length });
   return result;
 }
 
@@ -343,9 +411,7 @@ async function resolveLiveVideo(context, handle, apiKey) {
   }
 
   const knownLive = await readCache(context, "known-live", handle);
-  const knownVideoId = isVideoId(knownLive?.videoId)
-    ? knownLive.videoId
-    : null;
+  const knownVideoId = isVideoId(knownLive?.videoId) ? knownLive.videoId : null;
 
   if (knownVideoId) {
     const verifiedVideoId = activeLiveVideoId(
@@ -363,26 +429,115 @@ async function resolveLiveVideo(context, handle, apiKey) {
     await deleteCache(context, "known-live", handle);
   }
 
-  const videoIds = await latestUploadIds(channel.uploadsPlaylistId, apiKey);
-  const videoId = activeLiveVideoId(
-    videoIds,
-    await videosById(videoIds, apiKey),
+  const searchDisabled = await readCache(
+    context,
+    "searchDisabled",
+    SEARCH_DISABLED_CACHE_KEY,
+  );
+
+  if (searchDisabled !== null) {
+    return resolveFromUploads(
+      context,
+      handle,
+      apiKey,
+      channel,
+      "search-disabled-uploads",
+    );
+  }
+
+  const searchMiss = await readCache(context, "searchMiss", handle);
+
+  if (searchMiss !== null) {
+    return resolveFromUploads(
+      context,
+      handle,
+      apiKey,
+      channel,
+      "search-miss-uploads",
+    );
+  }
+
+  let searchVideoIds;
+
+  try {
+    searchVideoIds = await searchLiveVideoIds(channel.channelId, apiKey);
+  } catch (error) {
+    if (error?.stage !== "search.list") {
+      throw error;
+    }
+
+    if (error.reason === "quotaExceeded") {
+      await writeCache(
+        context,
+        "searchDisabled",
+        SEARCH_DISABLED_CACHE_KEY,
+        { active: true },
+        CACHE_TTL.searchDisabled,
+      );
+      console.warn(
+        "[youtube-live] search.list quota exhausted; using uploads fallback.",
+      );
+      return resolveFromUploads(
+        context,
+        handle,
+        apiKey,
+        channel,
+        "search-disabled-uploads",
+      );
+    }
+
+    if (
+      error.status === null ||
+      error.status === 429 ||
+      error.status === 500 ||
+      error.status === 502 ||
+      error.status === 503 ||
+      error.status === 504
+    ) {
+      console.warn(
+        "[youtube-live] search.list unavailable; using uploads fallback.",
+        { stage: error.stage, status: error.status },
+      );
+      return resolveFromUploads(
+        context,
+        handle,
+        apiKey,
+        channel,
+        "search-error-uploads",
+      );
+    }
+
+    throw error;
+  }
+
+  const searchVideoId = activeLiveVideoId(
+    searchVideoIds,
+    await videosById(searchVideoIds, apiKey),
     channel.channelId,
   );
 
-  if (videoId) {
-    const result = await storeLiveResult(context, handle, videoId);
-    logResult("uploads-playlist", result, { uploadsChecked: videoIds.length });
+  if (searchVideoId) {
+    const result = await storeLiveResult(context, handle, searchVideoId);
+    logResult("search-list", result, {
+      searchCandidatesChecked: searchVideoIds.length,
+    });
     return result;
   }
 
   const result = { live: false };
-  await storeResult(context, handle, result);
-  console.warn("[youtube-live] No active broadcast found in latest uploads.", {
-    channelId: channel.channelId,
-    uploadsChecked: videoIds.length,
+  await Promise.all([
+    writeCache(
+      context,
+      "searchMiss",
+      handle,
+      { active: true },
+      CACHE_TTL.searchMiss,
+    ),
+    storeResult(context, handle, result),
+  ]);
+  logResult("search-list", result, {
+    searchCandidatesChecked: searchVideoIds.length,
   });
-  logResult("uploads-playlist", result, { uploadsChecked: videoIds.length });
   return result;
 }
 
@@ -391,10 +546,7 @@ export async function onRequestGet(context) {
   const handle = normalizeHandle(requestUrl.searchParams.get("handle"));
 
   if (!handle) {
-    return jsonResponse(
-      { error: "Missing or invalid YouTube handle." },
-      400,
-    );
+    return jsonResponse({ error: "Missing or invalid YouTube handle." }, 400);
   }
 
   const apiKey = String(context.env?.YOUTUBE_API_KEY || "").trim();
