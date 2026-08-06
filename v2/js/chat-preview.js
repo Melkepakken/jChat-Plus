@@ -1,9 +1,115 @@
 (function () {
   window.Chat = window.Chat || {};
 
+  var previewPlatformWeights = {
+    twitch: 2,
+    kick: 1,
+    youtube: 1,
+  };
+  var previewMessageBags = {};
+
+  function resetPreviewMessageBags() {
+    previewMessageBags = {};
+  }
+
+  function shufflePreviewMessages(items) {
+    for (var i = items.length - 1; i > 0; i--) {
+      var randomIndex = Math.floor(Math.random() * (i + 1));
+      var item = items[i];
+
+      items[i] = items[randomIndex];
+      items[randomIndex] = item;
+    }
+
+    return items;
+  }
+
+  function takePreviewMessage(platform, pool) {
+    var bag = previewMessageBags[platform];
+
+    if (!bag) {
+      bag = {
+        items: [],
+        lastKey: null,
+      };
+      previewMessageBags[platform] = bag;
+    }
+
+    if (!bag.items.length) {
+      bag.items = shufflePreviewMessages(pool.slice());
+
+      var nextIndex = bag.items.length - 1;
+
+      if (
+        bag.items.length > 1 &&
+        Chat.getPreviewMessageKey(bag.items[nextIndex]) === bag.lastKey
+      ) {
+        var swapIndex = Math.floor(Math.random() * nextIndex);
+        var swapItem = bag.items[nextIndex];
+
+        bag.items[nextIndex] = bag.items[swapIndex];
+        bag.items[swapIndex] = swapItem;
+      }
+    }
+
+    var item = bag.items.pop();
+
+    bag.lastKey = Chat.getPreviewMessageKey(item);
+
+    return item;
+  }
+
+  function getPreviewYouTubeEnabled(params) {
+    var youtubeValue = params.get("youtube");
+
+    if (
+      params.has("youtube") &&
+      /^(false|0|no|off|disabled)$/i.test(String(youtubeValue || "").trim())
+    ) {
+      return false;
+    }
+
+    if (
+      params.has("youtube_video") &&
+      String(params.get("youtube_video") || "").trim()
+    ) {
+      return true;
+    }
+
+    return params.has("youtube") && Boolean(String(youtubeValue || "").trim());
+  }
+
+  $.extend(Chat.info, {
+    previewYouTubeEnabled: getPreviewYouTubeEnabled(
+      new URLSearchParams(window.location.search),
+    ),
+  });
+
   $.extend(Chat, {
     isPreviewKickEnabled: function () {
-      return Chat.info.kickRoomId || Chat.info.kickChannel !== false;
+      if (Chat.info.kickRoomId) {
+        return true;
+      }
+
+      var kickChannel = Chat.info.kickChannel;
+
+      if (
+        kickChannel === false ||
+        kickChannel === null ||
+        kickChannel === undefined
+      ) {
+        return false;
+      }
+
+      kickChannel = String(kickChannel).trim();
+
+      return (
+        Boolean(kickChannel) &&
+        !/^(false|0|no|off|disabled)$/i.test(kickChannel)
+      );
+    },
+    isPreviewYouTubeEnabled: function () {
+      return Chat.info.previewYouTubeEnabled === true;
     },
 
     loadPreviewKickAssets: function (callback) {
@@ -49,6 +155,17 @@
         ) {
           return false;
         }
+      } else if (item.platform === "youtube") {
+        if (!Chat.isPreviewYouTubeEnabled()) {
+          return false;
+        }
+
+        if (
+          typeof Chat.shouldShowYouTubeMessage !== "function" ||
+          !Chat.shouldShowYouTubeMessage(item.data)
+        ) {
+          return false;
+        }
       } else {
         var displayName = item.info && item.info["display-name"];
 
@@ -83,6 +200,14 @@
         ].join(":");
       }
 
+      if (item.platform === "youtube") {
+        return [
+          "youtube",
+          item.data ? item.data.displayName || "" : "",
+          item.data ? item.data.message || "" : "",
+        ].join(":");
+      }
+
       return ["twitch", item.nick || "", item.message || ""].join(":");
     },
 
@@ -91,31 +216,51 @@
         return null;
       }
 
-      var attempts = Math.max(8, Chat.previewMessages.length * 4);
-      var fallback = null;
+      var platformPools = {};
+      var platformMessageKeys = {};
 
-      for (var i = 0; i < attempts; i++) {
-        var candidate =
-          Chat.previewMessages[
-            Math.floor(Math.random() * Chat.previewMessages.length)
-          ];
-
-        if (!Chat.shouldShowPreviewMessage(candidate)) {
-          continue;
+      Chat.previewMessages.forEach(function (item) {
+        if (!Chat.shouldShowPreviewMessage(item)) {
+          return;
         }
 
-        if (!fallback) {
-          fallback = candidate;
+        var platform = item.platform || "twitch";
+
+        if (!platformPools[platform]) {
+          platformPools[platform] = [];
+          platformMessageKeys[platform] = Object.create(null);
         }
 
-        var key = Chat.getPreviewMessageKey(candidate);
+        var key = Chat.getPreviewMessageKey(item);
 
-        if (key !== Chat.info.previewLastMessageKey) {
-          return candidate;
+        if (platformMessageKeys[platform][key]) {
+          return;
         }
+
+        platformMessageKeys[platform][key] = true;
+        platformPools[platform].push(item);
+      });
+
+      var platforms = Object.keys(platformPools);
+
+      if (!platforms.length) {
+        return null;
       }
 
-      return fallback;
+      var weightedPlatforms = [];
+
+      platforms.forEach(function (platform) {
+        var weight = previewPlatformWeights[platform] || 1;
+
+        for (var i = 0; i < weight; i++) {
+          weightedPlatforms.push(platform);
+        }
+      });
+
+      var platform =
+        weightedPlatforms[Math.floor(Math.random() * weightedPlatforms.length)];
+
+      return takePreviewMessage(platform, platformPools[platform]);
     },
 
     getRandomPreviewDelay: function () {
@@ -133,7 +278,10 @@
         return randomBetween(1600, 2800);
       }
 
-      return randomBetween(Chat.info.previewMinDelay, Chat.info.previewMaxDelay);
+      return randomBetween(
+        Chat.info.previewMinDelay,
+        Chat.info.previewMaxDelay,
+      );
     },
 
     scheduleNextPreviewMessage: function (delay) {
@@ -171,9 +319,22 @@
       if (item.platform === "kick") {
         var kickData = $.extend(true, {}, item.data);
 
-        kickData.id = "preview-kick-" + Date.now() + "-" + Chat.info.previewIndex;
+        kickData.id =
+          "preview-kick-" + Date.now() + "-" + Chat.info.previewIndex;
 
         Chat.writeKick(kickData);
+
+        if (callback) callback();
+        return;
+      }
+
+      if (item.platform === "youtube") {
+        var youtubeData = $.extend(true, {}, item.data);
+
+        youtubeData.id =
+          "preview-youtube-" + Date.now() + "-" + Chat.info.previewIndex;
+
+        Chat.writeYouTubeMessage(youtubeData);
 
         if (callback) callback();
         return;
@@ -227,6 +388,7 @@
     },
 
     startPreview: function () {
+      resetPreviewMessageBags();
       Chat.info.lines = [];
       Chat.info.previewLastMessageKey = null;
       $("#chat_container").empty();
@@ -244,8 +406,12 @@
         return params.has(name) && /^(1|true|yes)$/i.test(params.get(name));
       }
 
-      Chat.info.size = params.has("size") ? parseInt(params.get("size"), 10) : 3;
-      Chat.info.font = params.has("font") ? parseInt(params.get("font"), 10) : 0;
+      Chat.info.size = params.has("size")
+        ? parseInt(params.get("size"), 10)
+        : 3;
+      Chat.info.font = params.has("font")
+        ? parseInt(params.get("font"), 10)
+        : 0;
       Chat.info.stroke = params.has("stroke")
         ? parseInt(params.get("stroke"), 10)
         : false;
@@ -283,9 +449,11 @@
         : params.has("kick_channel")
           ? params.get("kick_channel")
           : false;
+      Chat.info.previewYouTubeEnabled = getPreviewYouTubeEnabled(params);
       Chat.info.blockedUsers = params.has("block")
         ? Chat.normalizeBlockedUsers(params.get("block"))
         : false;
+      resetPreviewMessageBags();
       Chat.applyStaticStyles();
 
       if (Chat.info.preview) {

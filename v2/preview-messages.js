@@ -56,6 +56,28 @@
     };
   }
 
+  function youtube(displayName, message, options) {
+    options = options || {};
+
+    var key = String(displayName || "youtube")
+      .toLowerCase()
+      .replace(/^@+/, "")
+      .replace(/[^a-z0-9]+/g, "-");
+
+    return {
+      platform: "youtube",
+      bot: !!options.bot,
+      command: !!options.command,
+      data: {
+        id: "preview-youtube-" + key,
+        userId: options.userId || "UC_PREVIEW_" + key.toUpperCase(),
+        displayName: displayName,
+        message: message,
+        emotes: options.emotes || null,
+      },
+    };
+  }
+
   var twitchMessages = [
     // Core Twitch identity and badge coverage
     twitch(
@@ -2511,7 +2533,464 @@
       [kickBadge("vip", { text: "VIP", sort_order: 2 })],
       "Holy Diver energy in a green chat box.",
     ),
+
+    // More everyday Kick chat
+    kick("nordavind", "Nordavind", "81c784", [], "det var faktisk smooth"),
+    kick(
+      "lurkeren",
+      "Lurkeren",
+      "90a4ae",
+      [],
+      "Er lyden litt foran bildet hos noen andre?",
+    ),
+    kick(
+      "pixelper",
+      "PixelPer",
+      "42a5f5",
+      [],
+      "Prøv døra til venstre først.",
+    ),
+    kick("noscopenils", "NoScopeNils", "ef5350", [], "nice"),
+    kick("raidready", "RaidReady", "ffee58", [], "gg"),
+    kick(
+      "frametimefred",
+      "FrametimeFred",
+      "7e57c2",
+      [],
+      "OBS dropped a few frames there.",
+    ),
+    kick(
+      "sourcesigrid",
+      "SourceSigrid",
+      "26a69a",
+      [],
+      "A quick browser-source refresh fixed it for me.",
+    ),
+    kick(
+      "kabelkongen",
+      "KabelKongen",
+      "ff7043",
+      [],
+      "Har du prøvd å slå capture-kortet av og på?",
+    ),
+    kick(
+      "bodobob",
+      "BodoBob",
+      "29b6f6",
+      [],
+      "Sol i Bodø i dag, utrolig nok ☀️",
+    ),
+    kick(
+      "saltstraumen",
+      "Saltstraumen",
+      "00acc1",
+      [],
+      "IRL-signalet er mye bedre nede ved havna.",
+    ),
+    kick(
+      "riffreidar",
+      "RiffReidar",
+      "ab47bc",
+      [],
+      "Hva stemmer du gitaren i?",
+    ),
+    kick(
+      "doomdad",
+      "DoomDad",
+      "8d6e63",
+      [],
+      "That palm mute sounded tight.",
+    ),
+    kick(
+      "maidenmarit",
+      "MaidenMarit",
+      "ffca28",
+      [],
+      "PLAY THE TROOPER",
+    ),
+    kick(
+      "melkeskum",
+      "Melkeskum",
+      "ec407a",
+      [],
+      "Melkepakken, mikrofonen er litt lav nå.",
+    ),
+    kick(
+      "metalpakkenfan",
+      "MetalpakkenFan",
+      "b0bec5",
+      [],
+      "Blir det Metalpakken etterpå?",
+    ),
+    kick(
+      "multistreammats",
+      "MultistreamMats",
+      "66bb6a",
+      [],
+      "YouTube heard that before Kick did.",
+    ),
+    kick(
+      "sofaqueue",
+      "SofaQueue",
+      "5c6bc0",
+      [],
+      "Who are you playing with?",
+    ),
+    kick(
+      "lootlars",
+      "LootLars",
+      "ffa726",
+      [],
+      "Save before you go in.",
+    ),
+    kick(
+      "healhilde",
+      "HealHilde",
+      "ef5350",
+      [],
+      "Du har en potion igjen.",
+    ),
+    kick("mapmikkel", "MapMikkel", "26c6da", [], "map?"),
+    kick(
+      "clipclara",
+      "ClipClara",
+      "ec407a",
+      [],
+      "someone clip that",
+    ),
+    kick(
+      "lurkinglee",
+      "LurkingLee",
+      "78909c",
+      [],
+      "Back from dinner. Did the boss win again?",
+    ),
+    kick("sofialive", "SofiaLive", "ff8a65", [], "lol 😂"),
+    kick("tommy_two", "TommyTwo", "9ccc65", [], "same"),
+    kick(
+      "oerjanpatur",
+      "ØrjanPåTur",
+      "4dd0e1",
+      [],
+      "Køen ved ferga ser brutal ut 😅",
+    ),
+
+    // Additional Kick badge, filter, command and renderer coverage
+    kick(
+      "svein1988",
+      "Svein1988",
+      "4dd0e1",
+      [
+        kickBadge("verified", { text: "Verified", sort_order: 2 }),
+        kickBadge("og", { text: "OG", sort_order: 4 }),
+        kickBadge("subscriber", {
+          text: "Subscriber",
+          count: 24,
+          sort_order: 9,
+        }),
+      ],
+      "The badges finally fit on one line for me.",
+    ),
+    kick(
+      "ina_live",
+      "InaLive",
+      "f06292",
+      [
+        kickBadge("founder", { text: "Founder", count: 1, sort_order: 3 }),
+        kickBadge("gifter", { text: "Sub Gifter", count: 10, sort_order: 8 }),
+      ],
+      "Good stream tonight, folks.",
+    ),
+    kick("uptimeulf", "UptimeUlf", "42a5f5", [], "!uptime", {
+      command: true,
+    }),
+    kick("discorddina", "DiscordDina", "ab47bc", [], "!discord", {
+      command: true,
+    }),
+    kick(
+      "streamelements",
+      "StreamElements",
+      "5c6bc0",
+      [kickBadge("bot", { text: "Bot", sort_order: 1 })],
+      "Stian has been live for 2 hours and 14 minutes.",
+      { bot: true },
+    ),
+    kick(
+      "vaulttec",
+      "vaulttec",
+      "76ff03",
+      [],
+      "Is the green chat delayed for anyone else?",
+    ),
+    kick(
+      "emotemaja",
+      "EmoteMaja",
+      "ffca28",
+      [],
+      "wait [emote:37244:modCheck] okay now I see it [emote:37226:KEKW]",
+    ),
+    kick(
+      "froglars",
+      "FrogLars",
+      "66bb6a",
+      [],
+      "[emote:37226:KEKW][emote:37244:modCheck]",
+    ),
+    kick(
+      "anders_online",
+      "AndersOnline",
+      "ffb74d",
+      [],
+      '<b>not bold</b> & "still just chat"',
+    ),
   ];
 
-  window.jChatPlusPreviewMessages = twitchMessages.concat(kickMessages);
+  var youtubeBlueSmile = {
+    image:
+      "https://yt3.ggpht.com/cktIaPxFwnrPwn-alHvnvedHLUJwbHi8HCK3AgbHpphrMAW99qw0bDfxuZagSY5ieE9BBrA=w48-h48-c-k-nd",
+    label: "face-blue-smiling",
+  };
+
+  var youtubePurpleCry = {
+    image:
+      "https://yt3.ggpht.com/g6_km98AfdHbN43gvEuNdZ2I07MmzVpArLwEvNBwwPqpZYzszqhRzU_DXALl11TchX5_xFE=w48-h48-c-k-nd",
+    label: "face-purple-crying",
+  };
+
+  var youtubePinkWave = {
+    image:
+      "https://yt3.ggpht.com/KOxdr_z3A5h1Gb7kqnxqOCnbZrBmxI2B_tRQ453BhTWUhYAlpg5ZP8IKEBkcvRoY8grY91Q=w48-h48-c-k-nd",
+    label: "hand-pink-waving",
+  };
+
+  var youtubeMessages = [
+    youtube(
+      "@MelkepakkenTV",
+      "Wait, YouTube chat is actually in the same overlay now?",
+    ),
+    youtube(
+      "@tobba947",
+      "YouTube reporting in. Multistream paperwork complete.",
+    ),
+    youtube(
+      "@datagutt",
+      "The username colours are deterministic, which is unnecessarily satisfying.",
+    ),
+    youtube(
+      "@BodoBandit",
+      "Æøå from YouTube too. Bodø survives another renderer.",
+    ),
+    youtube(
+      "@RiffRagnar",
+      "Play that riff again. The YouTube side barely heard it 🎸",
+    ),
+    youtube(
+      "@EmojiEnjoyer",
+      "youtube_emote_preview_blue youtube_emote_preview_blue youtube_emote_preview_blue",
+      {
+        emotes: {
+          youtube_emote_preview_blue: youtubeBlueSmile,
+        },
+      },
+    ),
+    youtube(
+      "@MixedEmojiDepartment",
+      "That timing was criminal youtube_emote_preview_cry 😭",
+      {
+        emotes: {
+          youtube_emote_preview_cry: youtubePurpleCry,
+        },
+      },
+    ),
+    youtube(
+      "@EmojiWall",
+      "youtube_emote_preview_blue youtube_emote_preview_cry youtube_emote_preview_wave",
+      {
+        emotes: {
+          youtube_emote_preview_blue: youtubeBlueSmile,
+          youtube_emote_preview_cry: youtubePurpleCry,
+          youtube_emote_preview_wave: youtubePinkWave,
+        },
+      },
+    ),
+    youtube(
+      "@WaveFromYouTube",
+      "Hello from the red side youtube_emote_preview_wave",
+      {
+        emotes: {
+          youtube_emote_preview_wave: youtubePinkWave,
+        },
+      },
+    ),
+    youtube(
+      "@NoBadgeAndy",
+      "No badges over here, just names, messages and questionable decisions.",
+    ),
+    youtube("@GambleGeir", "!gamble all", {
+      command: true,
+    }),
+    youtube(
+      "@Nightbot",
+      "Remember to follow the stream and pretend the setup was effortless.",
+      {
+        bot: true,
+      },
+    ),
+    youtube(
+      "@vaulttec",
+      "This message should disappear when vaulttec is blocked.",
+    ),
+    youtube(
+      "@LongMessageLarsYT",
+      "This YouTube message is long enough to check wrapping while Twitch, Kick and YouTube all fight for the same piece of screen without turning the overlay into soup.",
+    ),
+    youtube(
+      "@Metalpakken",
+      "THE RED PLATFORM HAS BEEN JUDGED. THE RIFFS MAY CONTINUE. 🔥🎸",
+    ),
+    youtube(
+      "@Flame",
+      "I opened YouTube for two seconds and somehow the stream got stranger.",
+    ),
+
+    // Everyday YouTube chat
+    youtube("@annika", "nice"),
+    youtube("@vexel", "gg"),
+    youtube("@morten87", "wait what happened"),
+    youtube("@lena_live", "that dodge was clean"),
+    youtube("@geir_s", "audio sounds fine here"),
+    youtube("@fellesferie", "Is the game volume a little loud for anyone else?"),
+    youtube("@fjordfrode", "Try the path behind the tower."),
+    youtube("@fjordfrode", "Yeah, the left one."),
+    youtube("@karianne", "You missed some loot by the stairs."),
+    youtube("@nordlys", "Save before the boss this time."),
+    youtube("@sander", "What difficulty is this?"),
+    youtube("@runeb", "Does this have co-op?"),
+    youtube("@mia_online", "I joined late, which area is this?"),
+    youtube("@olavk", "One more run?"),
+    youtube("@eirik", "No spoilers, but check the room behind you."),
+    youtube("@toneb", "The NPC said north, not west."),
+    youtube("@bodovær", "Det regner sidelengs i Bodø igjen."),
+    youtube("@saltstraumen", "IRL-signalet holder seg faktisk stabilt nå."),
+    youtube("@nordland84", "Ser bra ut på YouTube nå."),
+    youtube("@Åsmund", "Lyden hakket litt, men den er tilbake."),
+    youtube("@ingrid_h", "Kameraet ble skarpere etter den endringen."),
+    youtube("@obs_ole", "Did OBS reconnect by itself?"),
+    youtube("@bente", "Refreshing the browser source fixed the missing chat."),
+    youtube("@frida_frames", "I saw one dropped frame, otherwise fine."),
+    youtube("@kabelkarl", "The capture card audio is about half a second late."),
+    youtube("@streamstine", "Kick was ahead of YouTube for a moment."),
+    youtube("@marius_multi", "Which chat is winning right now?"),
+    youtube("@melkekartongen", "Melkepakken, the mic is a little low."),
+    youtube("@metalfrode", "Blir det Metalpakken i kveld?"),
+    youtube("@riffotto", "What tuning are you using?"),
+    youtube("@blastbeatbob", "The drums are louder than the guitar now."),
+    youtube("@maja_93", "Den riffen satt."),
+    youtube("@rondahl", "Holy Diver next?"),
+    youtube("@maidenfan74", "Powerslave is still the best one."),
+    youtube("@guitargeir", "Bridge pickup for this?"),
+    youtube("@stringsiv", "Did you put new strings on that guitar?"),
+    youtube("@tilbakeigjen", "Back from making coffee."),
+    youtube("@dinnerdan", "What did I miss?"),
+    youtube("@emil", "Same thing happened to me yesterday."),
+    youtube("@noor", "I thought it was lag, but it was just my Wi-Fi."),
+    youtube("@alexander", "Can you show the OBS settings after the match?"),
+    youtube("@helene", "Thanks, that fixed it."),
+    youtube("@tomo", "lol"),
+    youtube("@vik", "oof"),
+    youtube("@chattycath", "not me watching three chats at once"),
+    youtube("@irene", "good call"),
+
+    // YouTube commands and known bots
+    youtube("@knutkommando", "!uptime", { command: true }),
+    youtube("@siv_sanger", "!song", { command: true }),
+    youtube("@dina_d", "!discord", { command: true }),
+    youtube("@larslurk", "!lurk", { command: true }),
+    youtube("@kariclip", "!clip", { command: true }),
+    youtube(
+      "@StreamElements",
+      "Stian has been live for 2 hours. Thanks for hanging out.",
+      { bot: true },
+    ),
+    youtube("@Moobot", "Please keep links out of chat unless a mod asks.", {
+      bot: true,
+    }),
+
+    // More combinations of the captured YouTube emoji
+    youtube("@sola", "youtube_emote_preview_blue", {
+      emotes: {
+        youtube_emote_preview_blue: youtubeBlueSmile,
+      },
+    }),
+    youtube(
+      "@regnvær",
+      "youtube_emote_preview_cry youtube_emote_preview_cry youtube_emote_preview_cry",
+      {
+        emotes: {
+          youtube_emote_preview_cry: youtubePurpleCry,
+        },
+      },
+    ),
+    youtube(
+      "@treemoji",
+      "youtube_emote_preview_blue youtube_emote_preview_cry youtube_emote_preview_wave",
+      {
+        emotes: {
+          youtube_emote_preview_blue: youtubeBlueSmile,
+          youtube_emote_preview_cry: youtubePurpleCry,
+          youtube_emote_preview_wave: youtubePinkWave,
+        },
+      },
+    ),
+    youtube("@vinkevilde", "youtube_emote_preview_wave 👋", {
+      emotes: {
+        youtube_emote_preview_wave: youtubePinkWave,
+      },
+    }),
+    youtube("@nærpå", "that youtube_emote_preview_blue was way too close", {
+      emotes: {
+        youtube_emote_preview_blue: youtubeBlueSmile,
+      },
+    }),
+    youtube(
+      "@heiigjen",
+      "youtube_emote_preview_wave hello chat youtube_emote_preview_blue",
+      {
+        emotes: {
+          youtube_emote_preview_wave: youtubePinkWave,
+          youtube_emote_preview_blue: youtubeBlueSmile,
+        },
+      },
+    ),
+    youtube(
+      "@bølgen",
+      "youtube_emote_preview_wave youtube_emote_preview_wave",
+      {
+        emotes: {
+          youtube_emote_preview_wave: youtubePinkWave,
+        },
+      },
+    ),
+    youtube("@reaksjon", "no way youtube_emote_preview_cry 😂", {
+      emotes: {
+        youtube_emote_preview_cry: youtubePurpleCry,
+      },
+    }),
+
+    // YouTube renderer edge cases
+    youtube("@andersen", '<b>nice</b> & "still text"'),
+    youtube(
+      "@line_louise",
+      "I can read this on mobile, but it is long enough to wrap when the chat is narrow and all three platforms are sending messages at once.",
+    ),
+    youtube(
+      "@petter",
+      'He really said "one last try" and opened the menu again.',
+    ),
+  ];
+
+  window.jChatPlusPreviewMessages = twitchMessages.concat(
+    kickMessages,
+    youtubeMessages,
+  );
 })();

@@ -54,7 +54,7 @@ main {
 
 #intro {
     width: 100%;
-    max-width: 1400px;
+    max-width: 1480px;
     margin: 20px 0;
 }
 
@@ -82,7 +82,7 @@ a:hover {
 
 form[name="generator"] {
     width: 100%;
-    max-width: 1400px;
+    max-width: 1480px;
     margin: 10px 0 25px;
     padding: 22px;
     border-radius: 15px;
@@ -93,7 +93,7 @@ form[name="generator"] {
 
 .setup_layout {
     display: grid;
-    grid-template-columns: 420px minmax(620px, 1fr);
+    grid-template-columns: 460px minmax(0, 1fr);
     gap: 24px;
     align-items: stretch;
 }
@@ -287,7 +287,7 @@ input:focus {
 .kick_channel_block {
     min-height: 34px;
     display: grid;
-    grid-template-columns: 150px minmax(0, 1fr);
+    grid-template-columns: 135px minmax(0, 1fr);
     column-gap: 16px;
     row-gap: 6px;
     align-items: flex-start;
