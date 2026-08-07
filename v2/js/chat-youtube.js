@@ -3,7 +3,46 @@
 
   function requestJson(url, options) {
     return fetch(url, options || {}).then(function (response) {
-      return response.json().then(function (data) {
+      var contentType = String(
+        response.headers.get("Content-Type") || "",
+      ).trim();
+
+      return response.text().then(function (body) {
+        var mediaType = contentType.split(";", 1)[0].trim().toLowerCase();
+        var trimmedBody = body.trim();
+        var bodyStart = trimmedBody.charAt(0);
+        var shouldParseJson =
+          /[\/+]json$/.test(mediaType) ||
+          (!contentType && (bodyStart === "{" || bodyStart === "["));
+
+        if (!shouldParseJson) {
+          var nonJsonError = new Error(
+            "YouTube endpoint returned HTTP " +
+              response.status +
+              " with a non-JSON response.",
+          );
+
+          nonJsonError.status = response.status;
+
+          throw nonJsonError;
+        }
+
+        var data;
+
+        try {
+          data = JSON.parse(body);
+        } catch (err) {
+          var parseError = new Error(
+            "YouTube endpoint returned HTTP " +
+              response.status +
+              " with invalid JSON.",
+          );
+
+          parseError.status = response.status;
+
+          throw parseError;
+        }
+
         if (!response.ok) {
           var message =
             data && (data.message || data.error)
@@ -12,7 +51,8 @@
           var error = new Error(message);
 
           error.status = response.status;
-          error.code = data && data.code ? data.code : null;
+          error.code =
+            data && typeof data.code !== "undefined" ? data.code : null;
 
           throw error;
         }
