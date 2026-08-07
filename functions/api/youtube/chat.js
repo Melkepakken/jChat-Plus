@@ -512,6 +512,12 @@ function waitForPollRetry(delay) {
   });
 }
 
+function getPollRetryDelay(attempt, softBlock) {
+  var retryDelays = softBlock ? [1500, 3500] : [300, 900];
+
+  return retryDelays[attempt - 1];
+}
+
 function isRetryablePollStatus(status) {
   return [429, 500, 502, 503, 504].indexOf(status) !== -1;
 }
@@ -530,6 +536,25 @@ function looksLikeHtml(contentType, body) {
     /\btext\/html\b/i.test(String(contentType || "")) ||
       /^\s*<(?:!doctype\s+html|html\b|head\b|body\b)/i.test(
         String(body || ""),
+      ),
+  );
+}
+
+function isYouTubeSoftBlock(status, contentType, body) {
+  if (
+    status !== 403 ||
+    isJsonContentType(contentType) ||
+    !looksLikeHtml(contentType, body)
+  ) {
+    return false;
+  }
+
+  var html = String(body || "");
+
+  return Boolean(
+    /<title>\s*Sorry(?:\.{3}|\u2026)\s*<\/title>/i.test(html) ||
+      /\b(?:automated queries|unusual traffic from your computer network)\b/i.test(
+        html,
       ),
   );
 }
@@ -599,6 +624,7 @@ function createPollError(message, details) {
   error.contentType = details.contentType;
   error.retryAfter = details.retryAfter;
   error.html = Boolean(details.html);
+  error.softBlock = Boolean(details.softBlock);
   error.bodyPrefix = details.bodyPrefix || "";
   error.retryable = Boolean(details.retryable);
 
@@ -620,6 +646,7 @@ function logPollFailure(event, error, attempt, session, continuation) {
         ? sanitizePollDiagnostic(error.retryAfter, session, continuation, 100)
         : null,
     html: Boolean(error && error.html),
+    softBlock: Boolean(error && error.softBlock),
     error: sanitizePollDiagnostic(
       error && error.message ? error.message : "YouTube chat poll failed.",
       session,
@@ -677,6 +704,7 @@ async function fetchPollData(session, continuation, pollUrl, requestBody) {
   }
 
   var html = looksLikeHtml(contentType, responseBody);
+  var softBlock = isYouTubeSoftBlock(status, contentType, responseBody);
   var bodyPrefix = sanitizePollDiagnostic(
     responseBody,
     session,
@@ -693,8 +721,9 @@ async function fetchPollData(session, continuation, pollUrl, requestBody) {
         contentType: contentType,
         retryAfter: retryAfter,
         html: html,
+        softBlock: softBlock,
         bodyPrefix: bodyPrefix,
-        retryable: isRetryablePollStatus(status),
+        retryable: isRetryablePollStatus(status) || softBlock,
       },
     );
   }
@@ -752,7 +781,6 @@ async function fetchChatBatch(session, continuation) {
     context: session.context,
     continuation: continuation,
   });
-  var retryDelays = [300, 900];
   var pollData;
 
   for (var attempt = 1; attempt <= 3; attempt++) {
@@ -784,7 +812,9 @@ async function fetchChatBatch(session, continuation) {
         throw err;
       }
 
-      await waitForPollRetry(retryDelays[attempt - 1]);
+      await waitForPollRetry(
+        getPollRetryDelay(attempt, Boolean(err && err.softBlock)),
+      );
     }
   }
 
