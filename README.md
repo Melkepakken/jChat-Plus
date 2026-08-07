@@ -30,7 +30,7 @@ This project is based on the original jChat by **giambaJ**. Huge credit to the o
 * YouTube custom emoji plus ordinary Unicode emoji using the existing Twemoji or Native setting
 * YouTube moderator message deletion and user retraction handling
 * YouTube bot, hidden-command, and blocked-user filtering
-* Temporary YouTube connection retry
+* YouTube chat retry and reconnection handling
 * Automatic return to YouTube handle discovery after a stream ends when a fallback channel is configured
 * Simulated YouTube preview messages
 * Kick channel auto-resolve with `kick=true`, `kick=<channel>`, or `kick_channel=<channel>`
@@ -187,7 +187,15 @@ http://localhost:3000/v2/?channel=yourtwitchchannel
 
 For OBS, add the URL as a **Browser Source**.
 
-YouTube uses Cloudflare Pages Functions. Run the local Pages runtime with Wrangler:
+YouTube uses Cloudflare Pages Functions. For local Wrangler use, create a `.dev.vars` file:
+
+```txt
+YOUTUBE_API_KEY=your_key_here
+```
+
+Do **not** commit `.dev.vars`.
+
+Then run the local Pages runtime:
 
 ```bash
 npx wrangler pages dev .
@@ -274,23 +282,26 @@ The Cloudflare Function proxies the Twitch Helix endpoints used by jChat+:
 /api/twitch/bits/cheermotes
 ```
 
-The YouTube Functions serve different parts of the public web chat connector:
+The YouTube Functions handle separate parts of YouTube support:
 
-* `functions/api/youtube/live.js` resolves the current public broadcast for a handle.
-* `functions/api/youtube/chat.js` reads explicit Live Chat messages, custom emoji, and deletion actions.
+* `functions/api/youtube/live.js` uses the official YouTube Data API v3 to find the current live stream for a handle.
+* `functions/api/youtube/chat.js` uses the public web chat connector to read Live Chat messages, custom emoji, and deletion actions.
 
-The YouTube connector reads public web chat data through Cloudflare Functions. It is not an official YouTube API integration and requires no new Cloudflare secrets.
+Live Chat reading does not require YouTube OAuth.
 
 Required Cloudflare environment variables/secrets:
 
 ```txt
 TWITCH_CLIENT_ID
 TWITCH_CLIENT_SECRET
+YOUTUBE_API_KEY
 ```
 
-`TWITCH_CLIENT_SECRET` must be saved as a secret.
+`TWITCH_CLIENT_SECRET` and `YOUTUBE_API_KEY` must be saved as Cloudflare secrets.
 
-The frontend should never expose `TWITCH_CLIENT_SECRET`.
+Enable YouTube Data API v3 in Google Cloud, create an API key, and restrict it to YouTube Data API v3. Save that key as `YOUTUBE_API_KEY` in Cloudflare.
+
+The frontend should never expose either value.
 
 ---
 
@@ -375,7 +386,7 @@ Known limitation:
 
 ## YouTube support details
 
-jChat+ connects to public YouTube web chat through Cloudflare Pages Functions. Public streams can be discovered by handle; unlisted streams require `youtube_video`.
+jChat+ uses the official YouTube Data API v3 to discover public live streams by handle. Actual Live Chat reading uses the public web chat connector and does not require YouTube OAuth. Unlisted streams require `youtube_video`.
 
 Current YouTube support includes:
 
@@ -391,7 +402,7 @@ Current YouTube support includes:
 * Blocked users
 * Automatic public live discovery
 * Direct unlisted video support
-* Temporary reconnect handling
+* YouTube chat retry and reconnection handling
 * Stream-end rediscovery when a fallback YouTube channel is configured
 
 Planned YouTube additions:
@@ -453,7 +464,7 @@ v2/credentials.js
 
 The hosted version should use Cloudflare secrets instead of frontend credentials.
 
-Forks of this project do not receive the original Cloudflare secrets. Anyone deploying their own version must provide their own Twitch app credentials.
+Forks of this project do not receive the original Cloudflare secrets. Anyone deploying their own version must provide their own Twitch app credentials and YouTube Data API v3 key.
 
 ---
 
