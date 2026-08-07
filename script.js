@@ -25,7 +25,7 @@ function kickOption() {
 }
 
 function youtubeOption() {
-  const rows = $youtube_warning.add($youtube_channel_row).add($youtube_video_row);
+  const rows = $youtube_channel_row.add($youtube_video_row);
 
   if ($youtube_enabled.is(":checked")) {
     rows.removeClass("hidden");
@@ -350,7 +350,6 @@ const $kick_channel_row = $("#kick_channel_row");
 const $youtube_enabled = $('input[name="youtube_enabled"]');
 const $youtube_channel = $('input[name="youtube_channel"]');
 const $youtube_video = $('input[name="youtube_video"]');
-const $youtube_warning = $("#youtube_warning");
 const $youtube_channel_row = $("#youtube_channel_row");
 const $youtube_video_row = $("#youtube_video_row");
 
