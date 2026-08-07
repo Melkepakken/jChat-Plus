@@ -1,5 +1,5 @@
 function jsonResponse(body, status) {
-  return new Response(JSON.stringify(body, null, 2), {
+  return new Response(JSON.stringify(body), {
     status: status || 200,
     headers: {
       "Content-Type": "application/json",
@@ -452,14 +452,36 @@ function extractNextContinuation(continuations) {
 function buildPollHeaders(session) {
   var headers = {
     "User-Agent": getBrowserHeaders()["User-Agent"],
+    Accept: "application/json",
     "Content-Type": "application/json",
     "Accept-Language": "en-US,en;q=0.9",
     Cookie: "CONSENT=YES+1",
+    Origin: "https://www.youtube.com",
     "X-YouTube-Client-Version": session.clientVersion,
   };
 
   if (session.clientName) {
     headers["X-YouTube-Client-Name"] = String(session.clientName);
+  }
+
+  var videoId =
+    typeof session.videoId === "string" ? session.videoId.trim() : "";
+
+  if (videoId) {
+    headers.Referer =
+      "https://www.youtube.com/live_chat?is_popout=1&hl=en&v=" +
+      encodeURIComponent(videoId);
+  }
+
+  var visitorData =
+    session.context &&
+    session.context.client &&
+    typeof session.context.client.visitorData === "string"
+      ? session.context.client.visitorData
+      : "";
+
+  if (visitorData.trim()) {
+    headers["X-Goog-Visitor-Id"] = visitorData;
   }
 
   return headers;
@@ -484,28 +506,288 @@ function createChatEndedError() {
   return error;
 }
 
+function waitForPollRetry(delay) {
+  return new Promise(function (resolve) {
+    setTimeout(resolve, delay);
+  });
+}
+
+function isRetryablePollStatus(status) {
+  return [429, 500, 502, 503, 504].indexOf(status) !== -1;
+}
+
+function isJsonContentType(contentType) {
+  var mediaType = String(contentType || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+
+  return /[\/+]json$/.test(mediaType);
+}
+
+function looksLikeHtml(contentType, body) {
+  return Boolean(
+    /\btext\/html\b/i.test(String(contentType || "")) ||
+      /^\s*<(?:!doctype\s+html|html\b|head\b|body\b)/i.test(
+        String(body || ""),
+      ),
+  );
+}
+
+function getVisitorData(session) {
+  var visitorData =
+    session &&
+    session.context &&
+    session.context.client &&
+    typeof session.context.client.visitorData === "string"
+      ? session.context.client.visitorData
+      : "";
+
+  return visitorData;
+}
+
+function redactDiagnosticSecret(value, secret) {
+  var result = value;
+
+  if (typeof secret !== "string" || !secret) {
+    return result;
+  }
+
+  var variants = [secret];
+
+  try {
+    variants.push(encodeURIComponent(secret));
+  } catch (err) {
+    // The unencoded value is still redacted below.
+  }
+
+  variants.forEach(function (variant) {
+    if (variant) {
+      result = result.split(variant).join("[redacted]");
+    }
+  });
+
+  return result;
+}
+
+function sanitizePollDiagnostic(value, session, continuation, maxLength) {
+  var sanitized = String(value || "");
+  var secrets = [
+    session && session.apiKey,
+    continuation,
+    getVisitorData(session),
+  ];
+
+  secrets.forEach(function (secret) {
+    sanitized = redactDiagnosticSecret(sanitized, secret);
+  });
+
+  sanitized = sanitized.replace(
+    /((?:"|')?(?:key|api[_-]?key|continuation|visitor(?:data|[_-]?id))(?:"|')?\s*(?:=|:)\s*)(?:"[^"]*"|'[^']*'|[^\s,;&<>]+)/gi,
+    "$1[redacted]",
+  );
+
+  return sanitized.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function createPollError(message, details) {
+  var error = new Error(message);
+
+  error.name = "YouTubePollError";
+  error.stage = details.stage;
+  error.status = details.status;
+  error.contentType = details.contentType;
+  error.retryAfter = details.retryAfter;
+  error.html = Boolean(details.html);
+  error.bodyPrefix = details.bodyPrefix || "";
+  error.retryable = Boolean(details.retryable);
+
+  return error;
+}
+
+function logPollFailure(event, error, attempt, session, continuation) {
+  var warning = {
+    event: event,
+    attempt: attempt,
+    status:
+      error && typeof error.status === "number" ? error.status : null,
+    contentType:
+      error && error.contentType
+        ? sanitizePollDiagnostic(error.contentType, session, continuation, 100)
+        : null,
+    retryAfter:
+      error && error.retryAfter
+        ? sanitizePollDiagnostic(error.retryAfter, session, continuation, 100)
+        : null,
+    html: Boolean(error && error.html),
+    error: sanitizePollDiagnostic(
+      error && error.message ? error.message : "YouTube chat poll failed.",
+      session,
+      continuation,
+      160,
+    ),
+    stage: error && error.stage ? error.stage : "unknown",
+  };
+
+  if (error && error.bodyPrefix) {
+    warning.bodyPrefix = error.bodyPrefix;
+  }
+
+  console.warn(warning);
+}
+
+async function fetchPollData(session, continuation, pollUrl, requestBody) {
+  var pollResponse;
+
+  try {
+    pollResponse = await fetch(pollUrl, {
+      method: "POST",
+      headers: buildPollHeaders(session),
+      body: requestBody,
+    });
+  } catch (err) {
+    throw createPollError("YouTube chat network request failed.", {
+      stage: "fetch",
+      status: null,
+      contentType: null,
+      retryAfter: null,
+      html: false,
+      bodyPrefix: "",
+      retryable: true,
+    });
+  }
+
+  var status = pollResponse.status;
+  var contentType = pollResponse.headers.get("Content-Type") || null;
+  var retryAfter = pollResponse.headers.get("Retry-After") || null;
+  var responseBody;
+
+  try {
+    responseBody = await pollResponse.text();
+  } catch (err) {
+    throw createPollError("YouTube chat response body could not be read.", {
+      stage: "read",
+      status: status,
+      contentType: contentType,
+      retryAfter: retryAfter,
+      html: false,
+      bodyPrefix: "",
+      retryable: pollResponse.ok || isRetryablePollStatus(status),
+    });
+  }
+
+  var html = looksLikeHtml(contentType, responseBody);
+  var bodyPrefix = sanitizePollDiagnostic(
+    responseBody,
+    session,
+    continuation,
+    200,
+  );
+
+  if (!pollResponse.ok) {
+    throw createPollError(
+      "YouTube chat request failed with HTTP " + status + ".",
+      {
+        stage: "http",
+        status: status,
+        contentType: contentType,
+        retryAfter: retryAfter,
+        html: html,
+        bodyPrefix: bodyPrefix,
+        retryable: isRetryablePollStatus(status),
+      },
+    );
+  }
+
+  if (html) {
+    throw createPollError("YouTube chat returned an HTML response.", {
+      stage: "content_type",
+      status: status,
+      contentType: contentType,
+      retryAfter: retryAfter,
+      html: true,
+      bodyPrefix: bodyPrefix,
+      retryable: true,
+    });
+  }
+
+  var trimmedBody = responseBody.trim();
+  var bodyStart = trimmedBody.charAt(0);
+  var canSniffJson =
+    !contentType && (bodyStart === "{" || bodyStart === "[");
+
+  if (!isJsonContentType(contentType) && !canSniffJson) {
+    throw createPollError("YouTube chat returned a non-JSON response.", {
+      stage: "content_type",
+      status: status,
+      contentType: contentType,
+      retryAfter: retryAfter,
+      html: false,
+      bodyPrefix: bodyPrefix,
+      retryable: true,
+    });
+  }
+
+  try {
+    return JSON.parse(responseBody);
+  } catch (err) {
+    throw createPollError("YouTube chat returned invalid JSON.", {
+      stage: "parse",
+      status: status,
+      contentType: contentType,
+      retryAfter: retryAfter,
+      html: false,
+      bodyPrefix: bodyPrefix,
+      retryable: true,
+    });
+  }
+}
+
 async function fetchChatBatch(session, continuation) {
   var pollUrl =
     "https://www.youtube.com/youtubei/v1/live_chat/get_live_chat" +
     "?prettyPrint=false&key=" +
     encodeURIComponent(session.apiKey);
-
-  var pollResponse = await fetch(pollUrl, {
-    method: "POST",
-    headers: buildPollHeaders(session),
-    body: JSON.stringify({
-      context: session.context,
-      continuation: continuation,
-    }),
+  var requestBody = JSON.stringify({
+    context: session.context,
+    continuation: continuation,
   });
+  var retryDelays = [300, 900];
+  var pollData;
 
-  if (!pollResponse.ok) {
-    throw new Error(
-      "YouTube chat request failed with HTTP " + pollResponse.status + ".",
-    );
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      pollData = await fetchPollData(
+        session,
+        continuation,
+        pollUrl,
+        requestBody,
+      );
+      break;
+    } catch (err) {
+      logPollFailure(
+        "youtube_chat_poll_attempt_failed",
+        err,
+        attempt,
+        session,
+        continuation,
+      );
+
+      if (!err || !err.retryable || attempt === 3) {
+        logPollFailure(
+          "youtube_chat_poll_failed",
+          err,
+          attempt,
+          session,
+          continuation,
+        );
+        throw err;
+      }
+
+      await waitForPollRetry(retryDelays[attempt - 1]);
+    }
   }
 
-  var pollData = await pollResponse.json();
   var liveChatContinuation =
     pollData &&
     pollData.continuationContents &&
@@ -593,6 +875,7 @@ export async function onRequestGet(context) {
       clientVersion: clientVersion,
       clientName: clientName,
       context: innertubeContext,
+      videoId: videoId,
     };
 
     var firstBatch = await fetchChatBatch(session, unfilteredChat.continuation);
