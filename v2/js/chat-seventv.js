@@ -347,10 +347,127 @@
       return color + " " + Math.round(at * 100) / 100 + "%";
     },
 
+    sevenTvGqlPaintImageUrl: function (value) {
+      if (typeof value !== "string") return null;
+
+      var url = value.trim();
+
+      if (!url || /["\\\u0000-\u001f\u007f]/.test(url)) {
+        return null;
+      }
+
+      try {
+        var parsed = new URL(url);
+
+        if (
+          (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+          !parsed.hostname
+        ) {
+          return null;
+        }
+      } catch (error) {
+        return null;
+      }
+
+      return url;
+    },
+
+    selectSevenTvGqlPaintImage: function (images) {
+      if (!Array.isArray(images) || !images.length) {
+        return null;
+      }
+
+      var valid = images
+        .map(function (image, index) {
+          if (!image) return null;
+
+          var url = Chat.sevenTvGqlPaintImageUrl(image.url);
+
+          if (!url) return null;
+
+          var scale = Number(image.scale);
+          var frameCount = Number(image.frameCount);
+
+          return {
+            url: url,
+            mime: image.mime || null,
+            scale: Number.isFinite(scale) && scale > 0 ? scale : null,
+            frameCount: Number.isFinite(frameCount) ? frameCount : 0,
+            animated: Number.isFinite(frameCount) && frameCount > 1,
+            isHttps: /^https:/i.test(url),
+            isWebp:
+              String(image.mime || "")
+                .trim()
+                .toLowerCase() === "image/webp",
+            index: index,
+          };
+        })
+        .filter(Boolean);
+
+      if (!valid.length) return null;
+
+      var animated = valid.filter(function (image) {
+        return image.animated;
+      });
+      var candidates = animated.filter(function (image) {
+        return image.scale === 1;
+      });
+
+      if (!candidates.length) {
+        var scaledAnimated = animated.filter(function (image) {
+          return image.scale !== null;
+        });
+
+        if (scaledAnimated.length) {
+          var lowestScale = Math.min.apply(
+            null,
+            scaledAnimated.map(function (image) {
+              return image.scale;
+            }),
+          );
+
+          candidates = scaledAnimated.filter(function (image) {
+            return image.scale === lowestScale;
+          });
+        }
+      }
+
+      if (!candidates.length) {
+        candidates = valid.filter(function (image) {
+          return !image.animated && image.scale === 1;
+        });
+      }
+
+      if (!candidates.length) {
+        candidates = valid;
+      }
+
+      candidates.sort(function (a, b) {
+        if (a.isHttps !== b.isHttps) {
+          return a.isHttps ? -1 : 1;
+        }
+
+        if (a.isWebp !== b.isWebp) {
+          return a.isWebp ? -1 : 1;
+        }
+
+        return a.index - b.index;
+      });
+
+      return candidates[0];
+    },
+
     sevenTvGqlPaintLayerToCss: function (layer) {
       if (!layer || !layer.ty) return null;
 
       var type = String(layer.ty.__typename || "").toUpperCase();
+
+      if (type === "PAINTLAYERTYPEIMAGE") {
+        var image = Chat.selectSevenTvGqlPaintImage(layer.ty.images);
+
+        return image ? 'url("' + image.url + '")' : null;
+      }
+
       var stops = [];
 
       if (Array.isArray(layer.ty.stops)) {
@@ -543,6 +660,9 @@
             "       ... on PaintLayerTypeRadialGradient {" +
             "         repeating" +
             "         stops { at color { hex } }" +
+            "       }" +
+            "       ... on PaintLayerTypeImage {" +
+            "         images { url mime size scale width height frameCount }" +
             "       }" +
             "     }" +
             "   }" +
