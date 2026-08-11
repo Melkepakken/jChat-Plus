@@ -2,6 +2,35 @@
   window.Chat = window.Chat || {};
 
   $.extend(Chat, {
+    appendPlatformBadge: function ($target, platform) {
+      if (!Chat.info.platformBadges || Chat.info.hideAllBadges) return null;
+      if (!$target || !$target.length || typeof platform !== "string") {
+        return null;
+      }
+
+      var platformAssets = {
+        twitch: "../img/platforms/twitch.svg",
+        kick: "../img/platforms/kick.svg",
+        youtube: "../img/platforms/youtube.svg",
+      };
+
+      if (!Object.prototype.hasOwnProperty.call(platformAssets, platform)) {
+        return null;
+      }
+
+      var $badge = $("<img/>", {
+        src: platformAssets[platform],
+        alt: "",
+        "aria-hidden": "true",
+        draggable: "false",
+      });
+
+      $badge.addClass("platform_badge platform_badge_" + platform);
+      $target.append($badge);
+
+      return $badge;
+    },
+
     hasUserBadgeUrl: function (nick, url) {
       var badges = Chat.info.userBadges[nick];
 

@@ -26,6 +26,21 @@ body {
     border-radius: 10%;
 }
 
+.platform_badge {
+    display: inline-block;
+    width: 1em;
+    height: 0.82em;
+    object-fit: contain;
+    object-position: center;
+    margin: 0 0.16em 0.16em 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    vertical-align: middle;
+    background: transparent;
+    text-shadow: none;
+}
+
 #chat_container .nick.seventv_name_paint {
     display: inline-block;
     text-shadow: none !important;

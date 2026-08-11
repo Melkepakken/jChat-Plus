@@ -69,6 +69,10 @@ $.extend(true, Chat, {
         ? $.QueryString.hide_badges.toLowerCase() === "true"
         : false,
     hideAllBadges: "hide_all_badges" in $.QueryString,
+    platformBadges:
+      "platform_badges" in $.QueryString
+        ? /^(1|true|yes)$/i.test($.QueryString.platform_badges)
+        : true,
     nicknameColor: "cN" in $.QueryString ? $.QueryString.cN : false,
     emojiStyle:
       "emoji" in $.QueryString && $.QueryString.emoji.toLowerCase() === "native"
