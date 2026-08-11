@@ -73,22 +73,45 @@
         });
       });
 
+      function processSevenTvChannelEmotes(emotes) {
+        emotes.forEach((emote) => {
+          if (!emote.data || !emote.data.host || !emote.data.host.files) return;
+
+          var files = emote.data.host.files;
+          var file = files[files.length - 1];
+
+          Chat.info.emotes[emote.name] = {
+            id: emote.id,
+            image: "https:" + emote.data.host.url + "/" + file.name,
+            zeroWidth: emote.data.flags === 256,
+          };
+        });
+      }
+
       $.getJSON("https://7tv.io/v3/users/twitch/" + encodeURIComponent(channelID))
         .done(function (res) {
-          if (!res || !res.emote_set || !res.emote_set.emotes) return;
+          if (!res) return;
 
-          res.emote_set.emotes.forEach((emote) => {
-            if (!emote.data || !emote.data.host || !emote.data.host.files) return;
+          var emoteSetId = res.emote_set_id;
+          if (emoteSetId) {
+            $.getJSON(
+              "https://7tv.io/v3/emote-sets/" +
+                encodeURIComponent(emoteSetId),
+            )
+              .done(function (emoteSet) {
+                if (!emoteSet || !emoteSet.emotes) return;
 
-            var files = emote.data.host.files;
-            var file = files[files.length - 1];
+                processSevenTvChannelEmotes(emoteSet.emotes);
+              })
+              .fail(function () {
+                console.warn("jChat: Failed to load 7TV channel emotes.");
+              });
+            return;
+          }
 
-            Chat.info.emotes[emote.name] = {
-              id: emote.id,
-              image: "https:" + emote.data.host.url + "/" + file.name,
-              zeroWidth: emote.data.flags === 256,
-            };
-          });
+          if (res.emote_set && res.emote_set.emotes) {
+            processSevenTvChannelEmotes(res.emote_set.emotes);
+          }
         })
         .fail(function () {
           console.warn("jChat: Failed to load 7TV channel emotes.");
