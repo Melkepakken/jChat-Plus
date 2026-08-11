@@ -1,6 +1,6 @@
 # [![](https://chat.melkepakken.tv/img/peepoHappy_plus_small.png)](#) jChat+
 
-[![Release](https://img.shields.io/badge/release-v1.2.0-blue)](#)
+[![Release](https://img.shields.io/badge/release-v1.2.1-blue)](#)
 [![Website](https://img.shields.io/website-up-down-green-red/https/chat.melkepakken.tv.svg)](https://chat.melkepakken.tv/)
 [![License](https://img.shields.io/github/license/Melkepakken/jchat-plus)](LICENSE)
 
