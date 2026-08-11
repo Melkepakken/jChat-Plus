@@ -87,7 +87,10 @@
         Chat.appendPlatformBadge($userInfo, info.platform);
 
         // Writing badges
-        if (typeof info.badges === "string") {
+        if (
+          Chat.shouldRenderNormalBadges() &&
+          typeof info.badges === "string"
+        ) {
           var badgeTags = info.badges.split(",");
 
           if (Chat.info.hideBadges) {

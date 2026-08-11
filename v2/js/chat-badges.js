@@ -2,8 +2,19 @@
   window.Chat = window.Chat || {};
 
   $.extend(Chat, {
+    shouldRenderNormalBadges: function () {
+      return (
+        Chat.info.platformBadges !== "only" && !Chat.info.hideAllBadges
+      );
+    },
+
     appendPlatformBadge: function ($target, platform) {
-      if (!Chat.info.platformBadges || Chat.info.hideAllBadges) return null;
+      if (
+        Chat.info.platformBadges === "off" ||
+        Chat.info.hideAllBadges
+      ) {
+        return null;
+      }
       if (!$target || !$target.length || typeof platform !== "string") {
         return null;
       }
@@ -44,7 +55,11 @@
     },
 
     shouldLoadUserBadges: function (nick, userId) {
-      if (!nick) {
+      if (
+        !nick ||
+        Chat.info.hideBadges ||
+        !Chat.shouldRenderNormalBadges()
+      ) {
         return false;
       }
 
@@ -80,7 +95,7 @@
 
       if (
         Chat.info.hideBadges ||
-        Chat.info.hideAllBadges ||
+        !Chat.shouldRenderNormalBadges() ||
         !Array.isArray(badges) ||
         !badges.length
       ) {
@@ -142,6 +157,8 @@
 
       var normalizedNick = String(nick || "").toLowerCase();
       var normalizedUserId = String(userId || "");
+      var includeBadges =
+        !Chat.info.hideBadges && Chat.shouldRenderNormalBadges();
       var requests = [];
 
       function waitFor(request) {
@@ -154,11 +171,7 @@
         return done.promise();
       }
 
-      if (
-        Chat.info.ffzUserBadges &&
-        !Chat.info.hideBadges &&
-        !Chat.info.hideAllBadges
-      ) {
+      if (Chat.info.ffzUserBadges && includeBadges) {
         var ffzRequest = $.getJSON(
           "https://api.frankerfacez.com/v1/user/" + encodeURIComponent(nick),
         ).done(function (res) {
@@ -206,7 +219,11 @@
         requests.push(waitFor(ffzRequest));
       }
 
-      if (Array.isArray(Chat.info.ffzapBadges) && normalizedUserId) {
+      if (
+        includeBadges &&
+        Array.isArray(Chat.info.ffzapBadges) &&
+        normalizedUserId
+      ) {
         Chat.info.ffzapBadges.forEach(function (user) {
           if (!user || String(user.id) !== normalizedUserId) return;
 
@@ -230,7 +247,7 @@
         });
       }
 
-      if (Array.isArray(Chat.info.bttvBadges)) {
+      if (includeBadges && Array.isArray(Chat.info.bttvBadges)) {
         Chat.info.bttvBadges.forEach(function (user) {
           if (!user || !user.badge) return;
           if (String(user.name || "").toLowerCase() !== normalizedNick) return;
@@ -242,7 +259,7 @@
         });
       }
 
-      if (Array.isArray(Chat.info.seventvBadges)) {
+      if (includeBadges && Array.isArray(Chat.info.seventvBadges)) {
         Chat.info.seventvBadges.forEach(function (badge) {
           if (!badge || !Array.isArray(badge.users)) return;
 
@@ -271,15 +288,18 @@
 
       if (
         /^\d+$/.test(normalizedUserId) &&
-        ((!Chat.info.hideBadges && !Chat.info.hideAllBadges) ||
-          Chat.shouldLoadSevenTvNamePaint(normalizedUserId))
+        (includeBadges || Chat.shouldLoadSevenTvNamePaint(normalizedUserId))
       ) {
         requests.push(
           waitFor(Chat.loadSevenTvUserBadge(nick, normalizedUserId)),
         );
       }
 
-      if (Array.isArray(Chat.info.chatterinoBadges) && normalizedUserId) {
+      if (
+        includeBadges &&
+        Array.isArray(Chat.info.chatterinoBadges) &&
+        normalizedUserId
+      ) {
         Chat.info.chatterinoBadges.forEach(function (badge) {
           if (!badge || !Array.isArray(badge.users)) return;
 
@@ -302,7 +322,7 @@
     },
 
     appendChatBadge: function ($target, badgeData) {
-      if (Chat.info.hideAllBadges) return null;
+      if (!Chat.shouldRenderNormalBadges()) return null;
       if (!badgeData) return null;
 
       var $badge;

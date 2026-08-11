@@ -233,9 +233,13 @@
               <input type="checkbox" id="commands" name="commands" />
             </div>
 
-            <div class="form_row toggle_row">
+            <div class="form_row toggle_row platform_badges_row">
               <label for="platform_badges">Platform badges</label>
-              <input type="checkbox" id="platform_badges" name="platform_badges" checked />
+              <select id="platform_badges" name="platform_badges">
+                <option value="true" selected>On</option>
+                <option value="false">Off</option>
+                <option value="only">Only</option>
+              </select>
             </div>
 
             <div class="form_row toggle_row">

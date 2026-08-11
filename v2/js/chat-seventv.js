@@ -1004,7 +1004,11 @@
           Chat.applySevenTvNamePaint($username, userId);
         }
 
-        if (badge && !Chat.info.hideBadges && !Chat.info.hideAllBadges) {
+        if (
+          badge &&
+          !Chat.info.hideBadges &&
+          Chat.shouldRenderNormalBadges()
+        ) {
           var $userInfo = $username.closest(".user_info");
           var hasBadge = $userInfo.find("img.badge").filter(function () {
             return $(this).attr("src") === badge.url;
@@ -1123,7 +1127,8 @@
 
       userId = String(userId);
 
-      var includeBadge = !Chat.info.hideBadges && !Chat.info.hideAllBadges;
+      var includeBadge =
+        !Chat.info.hideBadges && Chat.shouldRenderNormalBadges();
       var includePaint =
         Chat.info.seventvNamePaints && !Chat.info.nicknameColor;
 
