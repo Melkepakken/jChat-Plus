@@ -344,6 +344,7 @@
 
       info.id = "preview-twitch-" + Date.now() + "-" + Chat.info.previewIndex;
       info.platform = "twitch";
+      info.previewFfzUserBadge = !!item.ffzUserBadge;
 
       function writeTwitchPreviewMessage() {
         Chat.write(item.nick, info, item.message);
