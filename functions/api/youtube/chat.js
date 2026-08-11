@@ -8,6 +8,10 @@ function jsonResponse(body, status) {
   });
 }
 
+var YOUTUBE_BOOTSTRAP_LOOKBACK_MS = 30 * 1000;
+var YOUTUBE_BOOTSTRAP_MAX_AGE_MS = 60 * 1000;
+var YOUTUBE_BOOTSTRAP_FUTURE_TOLERANCE_MS = 60 * 1000;
+
 function getBrowserHeaders() {
   return {
     "User-Agent":
@@ -374,6 +378,10 @@ function parseTextMessages(actions) {
 
     var displayName = getText(renderer.authorName).trim();
     var parsedMessage = parseMessageContent(renderer.message);
+    var timestampUsec = Number(renderer.timestampUsec);
+    var publishedAtMs = Number.isFinite(timestampUsec) && timestampUsec > 0
+      ? Math.floor(timestampUsec / 1000)
+      : null;
 
     if (!displayName || !parsedMessage.message) {
       return;
@@ -385,10 +393,38 @@ function parseTextMessages(actions) {
       displayName: displayName,
       message: parsedMessage.message,
       emotes: parsedMessage.emotes,
+      publishedAtMs: publishedAtMs,
     });
   });
 
   return messages;
+}
+
+function filterRecentBootstrapMessages(
+  messages,
+  bootstrapStartedAtMs,
+  processedAtMs,
+) {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+
+  var oldestPublishedAtMs = Math.max(
+    bootstrapStartedAtMs - YOUTUBE_BOOTSTRAP_LOOKBACK_MS,
+    processedAtMs - YOUTUBE_BOOTSTRAP_MAX_AGE_MS,
+  );
+  var newestPublishedAtMs =
+    processedAtMs + YOUTUBE_BOOTSTRAP_FUTURE_TOLERANCE_MS;
+
+  return messages.filter(function (message) {
+    return Boolean(
+      message &&
+        typeof message.publishedAtMs === "number" &&
+        Number.isFinite(message.publishedAtMs) &&
+        message.publishedAtMs >= oldestPublishedAtMs &&
+        message.publishedAtMs <= newestPublishedAtMs,
+    );
+  });
 }
 
 function parseDeletedMessageIds(actions) {
@@ -838,6 +874,7 @@ async function fetchChatBatch(session, continuation) {
     deletedMessageIds: parseDeletedMessageIds(liveChatContinuation.actions),
     continuation: next.continuation,
     timeoutMs: next.timeoutMs || 1000,
+    processedAtMs: Date.now(),
   };
 }
 
@@ -853,6 +890,8 @@ export async function onRequestGet(context) {
       400,
     );
   }
+
+  var bootstrapStartedAtMs = Date.now();
 
   var chatUrl =
     "https://www.youtube.com/live_chat?is_popout=1&hl=en&v=" +
@@ -914,8 +953,20 @@ export async function onRequestGet(context) {
       videoId: videoId,
       feed: unfilteredChat.title,
       session: session,
+      messages: filterRecentBootstrapMessages(
+        firstBatch.messages,
+        bootstrapStartedAtMs,
+        firstBatch.processedAtMs,
+      ),
+      seenMessageIds: firstBatch.messages
+        .map(function (message) {
+          return message && message.id ? String(message.id) : null;
+        })
+        .filter(Boolean),
+      deletedMessageIds: firstBatch.deletedMessageIds,
       continuation: firstBatch.continuation,
       timeoutMs: firstBatch.timeoutMs,
+      processedAtMs: firstBatch.processedAtMs,
     });
   } catch (err) {
     var ended = err && err.code === "youtube_chat_ended";
@@ -956,6 +1007,7 @@ export async function onRequestPost(context) {
       deletedMessageIds: batch.deletedMessageIds,
       continuation: batch.continuation,
       timeoutMs: batch.timeoutMs,
+      processedAtMs: batch.processedAtMs,
     });
   } catch (err) {
     var ended = err && err.code === "youtube_chat_ended";
