@@ -81,6 +81,10 @@
           $chatLine.attr("data-user-id", String(info["user-id"]));
         }
 
+        if (info.previewFfzUserBadge) {
+          $chatLine.attr("data-preview-ffz-user-badge", "true");
+        }
+
         var $userInfo = $("<span></span>");
         $userInfo.addClass("user_info");
 
@@ -136,21 +140,28 @@
               }
             });
 
-            if (Chat.info.userBadges[nick]) {
-              Chat.info.userBadges[nick].forEach((badge) => {
-                var $badge = Chat.appendChatBadge($userInfo, badge);
+            var userBadges =
+              !Chat.info.preview || info.previewFfzUserBadge
+                ? Chat.getFfzUserBadges(info["user-id"]).slice()
+                : [];
 
-                if (
-                  $badge &&
-                  badge.description === "Bot" &&
-                  info.mod === "1" &&
-                  $modBadge
-                ) {
-                  $badge.css("background-color", "rgb(0, 173, 3)");
-                  $modBadge.remove();
-                }
-              });
+            if (Array.isArray(Chat.info.userBadges[nick])) {
+              userBadges = userBadges.concat(Chat.info.userBadges[nick]);
             }
+
+            userBadges.forEach((badge) => {
+              var $badge = Chat.appendChatBadge($userInfo, badge);
+
+              if (
+                $badge &&
+                badge.description === "Bot" &&
+                info.mod === "1" &&
+                $modBadge
+              ) {
+                $badge.css("background-color", "rgb(0, 173, 3)");
+                $modBadge.remove();
+              }
+            });
 
             badges.forEach((badge) => {
               if (!badge.priority) {

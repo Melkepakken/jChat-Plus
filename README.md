@@ -1,6 +1,6 @@
 # [![](https://chat.melkepakken.tv/img/peepoHappy_plus_small.png)](#) jChat+
 
-[![Release](https://img.shields.io/badge/release-v1.2.3-blue)](#)
+[![Release](https://img.shields.io/badge/release-v1.2.4-blue)](#)
 [![Website](https://img.shields.io/website-up-down-green-red/https/chat.melkepakken.tv.svg)](https://chat.melkepakken.tv/)
 [![License](https://img.shields.io/github/license/Melkepakken/jchat-plus)](LICENSE)
 
@@ -55,7 +55,7 @@ This project is based on the original jChat by **giambaJ**. Huge credit to the o
 * Updated BTTV, FFZ, and 7TV emote loading
 * 7TV name paint support
 * 7TV user badge/cosmetic support
-* Fixed optional legacy FFZ room and user badge lookups
+* Optional legacy FFZ room badge lookup and optimized bulk FFZ user badge loading
 * Cloudflare Pages Function support for public Twitch Helix proxying
 * Modular v2 code structure using plain browser scripts
 
@@ -364,7 +364,7 @@ The frontend should never expose either value.
 | `platform_badges` | `platform_badges=false` | Hide platform badges only; other badges are unchanged |
 | `platform_badges` | `platform_badges=only`  | Show platform logos while hiding all other badges |
 | `ffz_room_badges` | `ffz_room_badges=true` | Enable legacy FFZ room badge lookup |
-| `ffz_user_badges` | `ffz_user_badges=true` | Enable legacy FFZ user badge lookup |
+| `ffz_user_badges` | `ffz_user_badges=true` | Enable FFZ user badges |
 
 `hide_badges=true` keeps its legacy behavior: it hides special/user badges while leaving normal Twitch/Kick badges and enabled platform badges visible. `hide_all_badges` overrides every badge setting, so no badges are shown even with `platform_badges=only`.
 

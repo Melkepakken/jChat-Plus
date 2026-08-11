@@ -76,6 +76,14 @@
         });
 
         // Load users badges
+        if (
+          Chat.info.ffzUserBadges &&
+          !Chat.info.hideBadges &&
+          Chat.shouldRenderNormalBadges()
+        ) {
+          Chat.loadFfzUserBadgeData();
+        }
+
         if (!Chat.info.hideBadges && !Chat.info.hideAllBadges) {
           $.getJSON("https://api.ffzap.com/v1/supporters")
             .done(function (res) {

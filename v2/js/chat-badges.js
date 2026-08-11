@@ -54,6 +54,156 @@
       });
     },
 
+    normalizeFfzBadgeUrl: function (url) {
+      url = String(url || "");
+
+      if (url.indexOf("//") === 0) {
+        return "https:" + url;
+      }
+
+      return url;
+    },
+
+    buildFfzUserBadgeCache: function (res) {
+      if (
+        !res ||
+        !Array.isArray(res.badges) ||
+        !res.users ||
+        typeof res.users !== "object" ||
+        Array.isArray(res.users)
+      ) {
+        return null;
+      }
+
+      var badgesById = {};
+      var userBadgeCache = {};
+
+      res.badges.forEach(function (badge) {
+        if (!badge || badge.id === undefined || badge.id === null) return;
+
+        var badgeId = String(badge.id);
+        var badgeUrl =
+          (badge.urls &&
+            (badge.urls["4"] || badge.urls["2"] || badge.urls["1"])) ||
+          badge.image ||
+          badge.alpha_image ||
+          badge.svg ||
+          badge.url;
+
+        badgeUrl = Chat.normalizeFfzBadgeUrl(badgeUrl);
+
+        if (!badgeUrl) return;
+
+        badgesById[badgeId] = {
+          description:
+            badge.title ||
+            badge.name ||
+            badge.tooltip ||
+            "FrankerFaceZ Badge",
+          url: badgeUrl,
+          color: badge.color || false,
+        };
+      });
+
+      Object.keys(res.users).forEach(function (badgeId) {
+        var badge = badgesById[String(badgeId)];
+        var userIds = res.users[badgeId];
+
+        if (!badge || !Array.isArray(userIds)) return;
+
+        userIds.forEach(function (userId) {
+          userId = String(userId || "");
+
+          if (!/^\d+$/.test(userId)) return;
+
+          if (!Array.isArray(userBadgeCache[userId])) {
+            userBadgeCache[userId] = [];
+          }
+
+          var exists = userBadgeCache[userId].some(function (existing) {
+            return (
+              existing.description === badge.description &&
+              existing.url === badge.url
+            );
+          });
+
+          if (!exists) {
+            userBadgeCache[userId].push(badge);
+          }
+        });
+      });
+
+      return userBadgeCache;
+    },
+
+    warnFfzUserBadgesOnce: function (details) {
+      if (Chat.info.ffzUserBadgeWarningShown) return;
+
+      Chat.info.ffzUserBadgeWarningShown = true;
+      console.warn(
+        "jChat: Failed to load FFZ user badges. Continuing without them.",
+        details || "",
+      );
+    },
+
+    loadFfzUserBadgeData: function () {
+      if (
+        !Chat.info.ffzUserBadges ||
+        Chat.info.hideBadges ||
+        !Chat.shouldRenderNormalBadges()
+      ) {
+        return $.Deferred().resolve().promise();
+      }
+
+      if (Chat.info.ffzUserBadgeRequest) {
+        return Chat.info.ffzUserBadgeRequest;
+      }
+
+      var request = $.getJSON(
+        "https://api.frankerfacez.com/v1/badges/ids",
+      );
+
+      Chat.info.ffzUserBadgeRequest = request;
+
+      request
+        .done(function (res) {
+          var cache = Chat.buildFfzUserBadgeCache(res);
+
+          if (!cache) {
+            Chat.warnFfzUserBadgesOnce("Unexpected response shape.");
+            return;
+          }
+
+          Chat.info.ffzUserBadgeCache = cache;
+
+          Chat.updateRenderedFfzUserBadges();
+          window.setTimeout(function () {
+            Chat.updateRenderedFfzUserBadges();
+          }, 400);
+        })
+        .fail(function (err) {
+          Chat.warnFfzUserBadgesOnce(err);
+        });
+
+      return request;
+    },
+
+    getFfzUserBadges: function (userId) {
+      userId = String(userId || "");
+
+      if (
+        !Chat.info.ffzUserBadges ||
+        Chat.info.hideBadges ||
+        !Chat.shouldRenderNormalBadges() ||
+        !/^\d+$/.test(userId) ||
+        !Array.isArray(Chat.info.ffzUserBadgeCache[userId])
+      ) {
+        return [];
+      }
+
+      return Chat.info.ffzUserBadgeCache[userId];
+    },
+
     shouldLoadUserBadges: function (nick, userId) {
       if (
         !nick ||
@@ -131,6 +281,61 @@
       return $lines.length;
     },
 
+    updateRenderedFfzUserBadges: function () {
+      if (
+        !Chat.info.ffzUserBadges ||
+        Chat.info.hideBadges ||
+        !Chat.shouldRenderNormalBadges()
+      ) {
+        return 0;
+      }
+
+      var updatedLines = 0;
+
+      $(".chat_line").each(function () {
+        var $line = $(this);
+        var userId = String($line.attr("data-user-id") || "");
+        var badges = Chat.getFfzUserBadges(userId);
+
+        if (
+          (Chat.info.preview &&
+            $line.attr("data-preview-ffz-user-badge") !== "true") ||
+          !badges.length
+        ) {
+          return;
+        }
+
+        var $username = $line.find(".user_info .nick").first();
+
+        if (!$username.length) return;
+
+        var $userInfo = $username.closest(".user_info");
+        var lineUpdated = false;
+
+        badges.forEach(function (badge) {
+          var exists = $userInfo.find("img.badge").filter(function () {
+            return $(this).attr("src") === badge.url;
+          }).length;
+
+          if (exists) return;
+
+          var $badge = Chat.appendChatBadge($userInfo, badge);
+
+          if ($badge) {
+            $badge.attr("data-ffz-user-badge", userId);
+            $badge.insertBefore($username);
+            lineUpdated = true;
+          }
+        });
+
+        if (lineUpdated) {
+          updatedLines++;
+        }
+      });
+
+      return updatedLines;
+    },
+
     addUserBadge: function (nick, userBadge) {
       if (!nick || !userBadge || !userBadge.url) return;
 
@@ -169,54 +374,6 @@
         });
 
         return done.promise();
-      }
-
-      if (Chat.info.ffzUserBadges && includeBadges) {
-        var ffzRequest = $.getJSON(
-          "https://api.frankerfacez.com/v1/user/" + encodeURIComponent(nick),
-        ).done(function (res) {
-          if (!res || !res.badges) return;
-
-          var userBadgeIds =
-            res.user && Array.isArray(res.user.badges)
-              ? res.user.badges.map(function (id) {
-                  return String(id);
-                })
-              : Object.keys(res.badges);
-
-          userBadgeIds.forEach(function (badgeId) {
-            var badge = res.badges[String(badgeId)];
-
-            if (!badge) return;
-
-            var badgeUrl =
-              badge.image || badge.alpha_image || badge.svg || badge.url;
-
-            if (!badgeUrl) return;
-
-            if (badgeUrl.indexOf("//") === 0) {
-              badgeUrl = "https:" + badgeUrl;
-            }
-
-            Chat.addUserBadge(nick, {
-              description:
-                badge.title ||
-                badge.name ||
-                badge.tooltip ||
-                "FrankerFaceZ Badge",
-              url: badgeUrl,
-              color: badge.color || false,
-            });
-          });
-
-          if (!Chat.updateRenderedUserBadges(nick)) {
-            window.setTimeout(function () {
-              Chat.updateRenderedUserBadges(nick);
-            }, 400);
-          }
-        });
-
-        requests.push(waitFor(ffzRequest));
       }
 
       if (

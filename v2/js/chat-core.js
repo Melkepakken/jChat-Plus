@@ -95,6 +95,8 @@ $.extend(true, Chat, {
         : false,
 
     ffzUserBadgeCache: {},
+    ffzUserBadgeRequest: null,
+    ffzUserBadgeWarningShown: false,
     fade: "fade" in $.QueryString ? parseInt($.QueryString.fade) : false,
     size: "size" in $.QueryString ? parseInt($.QueryString.size) : 3,
     font: "font" in $.QueryString ? parseInt($.QueryString.font) : 0,
