@@ -1,6 +1,6 @@
 # [![](https://chat.melkepakken.tv/img/peepoHappy_plus_small.png)](#) jChat+
 
-[![Release](https://img.shields.io/badge/release-v1.1.2-blue)](#)
+[![Release](https://img.shields.io/badge/release-v1.2.0-blue)](#)
 [![Website](https://img.shields.io/website-up-down-green-red/https/chat.melkepakken.tv.svg)](https://chat.melkepakken.tv/)
 [![License](https://img.shields.io/github/license/Melkepakken/jchat-plus)](LICENSE)
 
@@ -47,6 +47,7 @@ This project is based on the original jChat by **giambaJ**. Huge credit to the o
 * Toggle between native OS/browser emoji and pinned Twemoji
 * Force all usernames to one custom color with `cN`
 * Expanded list of known bots to filter out
+* Twitch, Kick, and YouTube platform badges, enabled by default
 * Hide all badges
 * Block specific usernames
 * Updated Twitch Helix user, badge, and cheermote handling
@@ -358,6 +359,7 @@ The frontend should never expose either value.
 | ----------------- | ---------------------- | ----------------------------------- |
 | `seventv_paints`  | `seventv_paints=true`  | Enable 7TV name paints              |
 | `emote_shadow`    | `emote_shadow=true`    | Add shadows to emotes, rendered emoji, and cheers |
+| `platform_badges` | `platform_badges=false` | Disable Twitch, Kick, and YouTube platform badges (enabled by default) |
 | `ffz_room_badges` | `ffz_room_badges=true` | Enable legacy FFZ room badge lookup |
 | `ffz_user_badges` | `ffz_user_badges=true` | Enable legacy FFZ user badge lookup |
 

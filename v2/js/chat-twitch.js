@@ -132,7 +132,11 @@
                 if (Chat.isUserBlocked(nick)) return;
 
                 function writeTwitchMessage() {
-                  Chat.write(nick, message.tags, message.params[1]);
+                  var info = $.extend({}, message.tags, {
+                    platform: "twitch",
+                  });
+
+                  Chat.write(nick, info, message.params[1]);
                 }
 
                 if (

@@ -207,6 +207,7 @@
         emotes: null,
         mod: isMod ? "1" : "0",
         bits: "0",
+        platform: "kick",
       };
 
       Chat.write(nick, info, content);

@@ -90,6 +90,8 @@
             "img.special",
             ".kick_badge",
             "img.kick_badge",
+            ".platform_badge",
+            "img.platform_badge",
             ".user_info > img",
           ].join(", ") + " { display: none !important; }",
         );

@@ -343,6 +343,7 @@
       var info = $.extend({}, item.info);
 
       info.id = "preview-twitch-" + Date.now() + "-" + Chat.info.previewIndex;
+      info.platform = "twitch";
 
       function writeTwitchPreviewMessage() {
         Chat.write(item.nick, info, item.message);
@@ -426,6 +427,8 @@
       Chat.info.hideCommands = truthy("hide_commands");
       Chat.info.hideBadges = truthy("hide_badges");
       Chat.info.hideAllBadges = params.has("hide_all_badges");
+      Chat.info.platformBadges =
+        !params.has("platform_badges") || truthy("platform_badges");
       Chat.info.smallCaps = truthy("small_caps");
 
       Chat.info.fade = params.has("fade")

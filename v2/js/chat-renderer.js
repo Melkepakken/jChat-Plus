@@ -84,6 +84,8 @@
         var $userInfo = $("<span></span>");
         $userInfo.addClass("user_info");
 
+        Chat.appendPlatformBadge($userInfo, info.platform);
+
         // Writing badges
         if (typeof info.badges === "string") {
           var badgeTags = info.badges.split(",");
