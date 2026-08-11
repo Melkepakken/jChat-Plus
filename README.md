@@ -457,6 +457,16 @@ Main modules:
 
 ---
 
+## AI-assisted development
+
+jChat+ is developed with the assistance of AI coding tools.
+
+I use AI to help navigate API documentation, inspect code, debug issues, review changes, and explore implementation approaches.
+
+Project direction, architecture, feature decisions, testing, and releases are handled by me. Changes are reviewed and tested before they are merged or released.
+
+---
+
 ## Security notes
 
 Do not commit:
