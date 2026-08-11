@@ -3,6 +3,7 @@ backups/
 t/
 .vscode
 .wrangler/
+/tests/
 
 v2/credentials.js
 .dev.vars

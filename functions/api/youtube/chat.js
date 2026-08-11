@@ -8,6 +8,23 @@ function jsonResponse(body, status) {
   });
 }
 
+var YOUTUBE_BOOTSTRAP_LOOKBACK_MS = 30 * 1000;
+var YOUTUBE_BOOTSTRAP_MAX_AGE_MS = 60 * 1000;
+var YOUTUBE_BOOTSTRAP_FUTURE_TOLERANCE_MS = 60 * 1000;
+var YOUTUBE_CHAT_REQUEST_TIMEOUT_MS = 15 * 1000;
+
+function createYouTubeRequestDeadline() {
+  var controller = new AbortController();
+  var timeout = setTimeout(function () {
+    controller.abort();
+  }, YOUTUBE_CHAT_REQUEST_TIMEOUT_MS);
+
+  return {
+    controller: controller,
+    timeout: timeout,
+  };
+}
+
 function getBrowserHeaders() {
   return {
     "User-Agent":
@@ -374,6 +391,10 @@ function parseTextMessages(actions) {
 
     var displayName = getText(renderer.authorName).trim();
     var parsedMessage = parseMessageContent(renderer.message);
+    var timestampUsec = Number(renderer.timestampUsec);
+    var publishedAtMs = Number.isFinite(timestampUsec) && timestampUsec > 0
+      ? Math.floor(timestampUsec / 1000)
+      : null;
 
     if (!displayName || !parsedMessage.message) {
       return;
@@ -385,10 +406,38 @@ function parseTextMessages(actions) {
       displayName: displayName,
       message: parsedMessage.message,
       emotes: parsedMessage.emotes,
+      publishedAtMs: publishedAtMs,
     });
   });
 
   return messages;
+}
+
+function filterRecentBootstrapMessages(
+  messages,
+  bootstrapStartedAtMs,
+  processedAtMs,
+) {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+
+  var oldestPublishedAtMs = Math.max(
+    bootstrapStartedAtMs - YOUTUBE_BOOTSTRAP_LOOKBACK_MS,
+    processedAtMs - YOUTUBE_BOOTSTRAP_MAX_AGE_MS,
+  );
+  var newestPublishedAtMs =
+    processedAtMs + YOUTUBE_BOOTSTRAP_FUTURE_TOLERANCE_MS;
+
+  return messages.filter(function (message) {
+    return Boolean(
+      message &&
+        typeof message.publishedAtMs === "number" &&
+        Number.isFinite(message.publishedAtMs) &&
+        message.publishedAtMs >= oldestPublishedAtMs &&
+        message.publishedAtMs <= newestPublishedAtMs,
+    );
+  });
 }
 
 function parseDeletedMessageIds(actions) {
@@ -421,7 +470,29 @@ function extractNextContinuation(continuations) {
     return {
       continuation: null,
       timeoutMs: null,
+      ended: false,
     };
+  }
+
+  var ended = false;
+
+  for (var i = 0; i < continuations.length; i++) {
+    var continuationItem = continuations[i];
+
+    if (
+      continuationItem &&
+      typeof continuationItem === "object" &&
+      continuationItem.playerSeekContinuationData &&
+      !Array.isArray(continuationItem.playerSeekContinuationData) &&
+      typeof continuationItem.playerSeekContinuationData === "object" &&
+      typeof continuationItem.playerSeekContinuationData.continuation ===
+        "string" &&
+      continuationItem.playerSeekContinuationData.continuation
+    ) {
+      // This known seek marker is explicit finished-chat evidence. Missing or
+      // unfamiliar continuation shapes remain recoverable below.
+      ended = true;
+    }
   }
 
   var types = [
@@ -430,14 +501,21 @@ function extractNextContinuation(continuations) {
     "reloadContinuationData",
   ];
 
-  for (var i = 0; i < continuations.length; i++) {
-    for (var j = 0; j < types.length; j++) {
-      var data = continuations[i][types[j]];
+  for (var j = 0; j < continuations.length; j++) {
+    var item = continuations[j];
+
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    for (var k = 0; k < types.length; k++) {
+      var data = item[types[k]];
 
       if (data && data.continuation) {
         return {
           continuation: data.continuation,
           timeoutMs: typeof data.timeoutMs === "number" ? data.timeoutMs : null,
+          ended: false,
         };
       }
     }
@@ -446,6 +524,7 @@ function extractNextContinuation(continuations) {
   return {
     continuation: null,
     timeoutMs: null,
+    ended: ended,
   };
 }
 
@@ -664,44 +743,58 @@ function logPollFailure(event, error, attempt, session, continuation) {
 }
 
 async function fetchPollData(session, continuation, pollUrl, requestBody) {
+  var deadline = createYouTubeRequestDeadline();
   var pollResponse;
+  var responseBody;
 
   try {
     pollResponse = await fetch(pollUrl, {
       method: "POST",
       headers: buildPollHeaders(session),
       body: requestBody,
+      signal: deadline.controller.signal,
     });
+    responseBody = await pollResponse.text();
   } catch (err) {
-    throw createPollError("YouTube chat network request failed.", {
-      stage: "fetch",
-      status: null,
-      contentType: null,
-      retryAfter: null,
+    var timedOut = deadline.controller.signal.aborted;
+    var failedStatus = pollResponse ? pollResponse.status : null;
+    var failedContentType = pollResponse
+      ? pollResponse.headers.get("Content-Type") || null
+      : null;
+    var failedRetryAfter = pollResponse
+      ? pollResponse.headers.get("Retry-After") || null
+      : null;
+    var failureMessage = "YouTube chat network request failed.";
+    var failureStage = "fetch";
+
+    if (timedOut) {
+      failureMessage = "YouTube chat request timed out.";
+      failureStage = "timeout";
+    } else if (pollResponse) {
+      failureMessage = "YouTube chat response body could not be read.";
+      failureStage = "read";
+    }
+
+    throw createPollError(failureMessage, {
+      stage: failureStage,
+      status: failedStatus,
+      contentType: failedContentType,
+      retryAfter: failedRetryAfter,
       html: false,
       bodyPrefix: "",
-      retryable: true,
+      retryable:
+        timedOut ||
+        !pollResponse ||
+        pollResponse.ok ||
+        isRetryablePollStatus(failedStatus),
     });
+  } finally {
+    clearTimeout(deadline.timeout);
   }
 
   var status = pollResponse.status;
   var contentType = pollResponse.headers.get("Content-Type") || null;
   var retryAfter = pollResponse.headers.get("Retry-After") || null;
-  var responseBody;
-
-  try {
-    responseBody = await pollResponse.text();
-  } catch (err) {
-    throw createPollError("YouTube chat response body could not be read.", {
-      stage: "read",
-      status: status,
-      contentType: contentType,
-      retryAfter: retryAfter,
-      html: false,
-      bodyPrefix: "",
-      retryable: pollResponse.ok || isRetryablePollStatus(status),
-    });
-  }
 
   var html = looksLikeHtml(contentType, responseBody);
   var softBlock = isYouTubeSoftBlock(status, contentType, responseBody);
@@ -824,13 +917,17 @@ async function fetchChatBatch(session, continuation) {
     pollData.continuationContents.liveChatContinuation;
 
   if (!liveChatContinuation) {
-    throw createChatEndedError();
+    throw new Error("YouTube live-chat response was missing.");
   }
 
   var next = extractNextContinuation(liveChatContinuation.continuations);
 
-  if (!next.continuation) {
+  if (next.ended) {
     throw createChatEndedError();
+  }
+
+  if (!next.continuation) {
+    throw new Error("YouTube returned no recognized next continuation.");
   }
 
   return {
@@ -838,6 +935,7 @@ async function fetchChatBatch(session, continuation) {
     deletedMessageIds: parseDeletedMessageIds(liveChatContinuation.actions),
     continuation: next.continuation,
     timeoutMs: next.timeoutMs || 1000,
+    processedAtMs: Date.now(),
   };
 }
 
@@ -854,25 +952,37 @@ export async function onRequestGet(context) {
     );
   }
 
+  var bootstrapStartedAtMs = Date.now();
+
   var chatUrl =
     "https://www.youtube.com/live_chat?is_popout=1&hl=en&v=" +
     encodeURIComponent(videoId);
 
   try {
-    var pageResponse = await fetch(chatUrl, {
-      headers: getBrowserHeaders(),
-    });
+    var deadline = createYouTubeRequestDeadline();
+    var pageResponse;
+    var html;
 
-    if (!pageResponse.ok) {
-      return jsonResponse(
-        {
-          error: "YouTube returned an unexpected chat-page response.",
-        },
-        502,
-      );
+    try {
+      pageResponse = await fetch(chatUrl, {
+        headers: getBrowserHeaders(),
+        signal: deadline.controller.signal,
+      });
+
+      if (!pageResponse.ok) {
+        return jsonResponse(
+          {
+            error: "YouTube returned an unexpected chat-page response.",
+          },
+          502,
+        );
+      }
+
+      html = await pageResponse.text();
+    } finally {
+      clearTimeout(deadline.timeout);
     }
 
-    var html = await pageResponse.text();
     var initialData = extractInitialData(html);
     var filterRenderer = findChatFilterRenderer(initialData);
     var unfilteredChat = findUnfilteredChat(filterRenderer);
@@ -914,8 +1024,20 @@ export async function onRequestGet(context) {
       videoId: videoId,
       feed: unfilteredChat.title,
       session: session,
+      messages: filterRecentBootstrapMessages(
+        firstBatch.messages,
+        bootstrapStartedAtMs,
+        firstBatch.processedAtMs,
+      ),
+      seenMessageIds: firstBatch.messages
+        .map(function (message) {
+          return message && message.id ? String(message.id) : null;
+        })
+        .filter(Boolean),
+      deletedMessageIds: firstBatch.deletedMessageIds,
       continuation: firstBatch.continuation,
       timeoutMs: firstBatch.timeoutMs,
+      processedAtMs: firstBatch.processedAtMs,
     });
   } catch (err) {
     var ended = err && err.code === "youtube_chat_ended";
@@ -956,6 +1078,7 @@ export async function onRequestPost(context) {
       deletedMessageIds: batch.deletedMessageIds,
       continuation: batch.continuation,
       timeoutMs: batch.timeoutMs,
+      processedAtMs: batch.processedAtMs,
     });
   } catch (err) {
     var ended = err && err.code === "youtube_chat_ended";
