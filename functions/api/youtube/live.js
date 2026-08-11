@@ -1,4 +1,5 @@
 const YOUTUBE_API_ROOT = "https://www.googleapis.com/youtube/v3/";
+const YOUTUBE_API_TIMEOUT_MS = 15000;
 const MAX_UPLOADS = 50;
 const CACHE_VERSION = "v1";
 const SEARCH_DISABLED_CACHE_KEY = "global";
@@ -6,7 +7,7 @@ const CACHE_TTL = {
   channel: 3 * 24 * 60 * 60,
   knownLive: 24 * 60 * 60,
   liveResult: 60,
-  offlineResult: 5 * 60,
+  offlineResult: 30,
   searchMiss: 60 * 60,
   searchClientCooldown: 30 * 60,
   searchDisabled: 6 * 60 * 60,
@@ -51,40 +52,59 @@ async function fetchApi(path, params, apiKey, stage) {
     url.searchParams.set(name, value);
   }
 
-  let response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    YOUTUBE_API_TIMEOUT_MS,
+  );
 
   try {
-    response = await fetch(url.toString(), {
-      headers: {
-        Accept: "application/json",
-        "X-Goog-Api-Key": apiKey,
-      },
-    });
-  } catch {
-    throw apiError(stage);
-  }
-
-  if (!response.ok) {
-    let reason = null;
+    let response;
 
     try {
-      const errorData = await response.json();
-      const firstReason = errorData?.error?.errors?.[0]?.reason;
-
-      if (typeof firstReason === "string") {
-        reason = firstReason;
-      }
+      response = await fetch(url.toString(), {
+        headers: {
+          Accept: "application/json",
+          "X-Goog-Api-Key": apiKey,
+        },
+        signal: controller.signal,
+      });
     } catch {
-      // The status and stage are enough when Google does not return JSON.
+      throw apiError(stage);
     }
 
-    throw apiError(stage, response.status, reason);
-  }
+    if (!response.ok) {
+      let reason = null;
 
-  try {
-    return await response.json();
-  } catch {
-    throw apiError(`${stage}-json`, response.status);
+      try {
+        const errorData = await response.json();
+        const firstReason = errorData?.error?.errors?.[0]?.reason;
+
+        if (typeof firstReason === "string") {
+          reason = firstReason;
+        }
+      } catch {
+        if (controller.signal.aborted) {
+          throw apiError(stage);
+        }
+
+        // The status and stage are enough when Google does not return JSON.
+      }
+
+      throw apiError(stage, response.status, reason);
+    }
+
+    try {
+      return await response.json();
+    } catch {
+      if (controller.signal.aborted) {
+        throw apiError(stage);
+      }
+
+      throw apiError(`${stage}-json`, response.status);
+    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -557,21 +577,20 @@ async function resolveLiveVideo(context, handle, apiKey) {
     return result;
   }
 
-  const result = { live: false };
-  await Promise.all([
-    writeCache(
-      context,
-      "searchMiss",
-      handle,
-      { active: true },
-      CACHE_TTL.searchMiss,
-    ),
-    storeResult(context, handle, result),
-  ]);
-  logResult("search-list", result, {
-    searchCandidatesChecked: searchVideoIds.length,
-  });
-  return result;
+  await writeCache(
+    context,
+    "searchMiss",
+    handle,
+    { active: true },
+    CACHE_TTL.searchMiss,
+  );
+  return resolveFromUploads(
+    context,
+    handle,
+    apiKey,
+    channel,
+    "search-miss-uploads",
+  );
 }
 
 export async function onRequestGet(context) {

@@ -11,6 +11,19 @@ function jsonResponse(body, status) {
 var YOUTUBE_BOOTSTRAP_LOOKBACK_MS = 30 * 1000;
 var YOUTUBE_BOOTSTRAP_MAX_AGE_MS = 60 * 1000;
 var YOUTUBE_BOOTSTRAP_FUTURE_TOLERANCE_MS = 60 * 1000;
+var YOUTUBE_CHAT_REQUEST_TIMEOUT_MS = 15 * 1000;
+
+function createYouTubeRequestDeadline() {
+  var controller = new AbortController();
+  var timeout = setTimeout(function () {
+    controller.abort();
+  }, YOUTUBE_CHAT_REQUEST_TIMEOUT_MS);
+
+  return {
+    controller: controller,
+    timeout: timeout,
+  };
+}
 
 function getBrowserHeaders() {
   return {
@@ -457,7 +470,29 @@ function extractNextContinuation(continuations) {
     return {
       continuation: null,
       timeoutMs: null,
+      ended: false,
     };
+  }
+
+  var ended = false;
+
+  for (var i = 0; i < continuations.length; i++) {
+    var continuationItem = continuations[i];
+
+    if (
+      continuationItem &&
+      typeof continuationItem === "object" &&
+      continuationItem.playerSeekContinuationData &&
+      !Array.isArray(continuationItem.playerSeekContinuationData) &&
+      typeof continuationItem.playerSeekContinuationData === "object" &&
+      typeof continuationItem.playerSeekContinuationData.continuation ===
+        "string" &&
+      continuationItem.playerSeekContinuationData.continuation
+    ) {
+      // This known seek marker is explicit finished-chat evidence. Missing or
+      // unfamiliar continuation shapes remain recoverable below.
+      ended = true;
+    }
   }
 
   var types = [
@@ -466,14 +501,21 @@ function extractNextContinuation(continuations) {
     "reloadContinuationData",
   ];
 
-  for (var i = 0; i < continuations.length; i++) {
-    for (var j = 0; j < types.length; j++) {
-      var data = continuations[i][types[j]];
+  for (var j = 0; j < continuations.length; j++) {
+    var item = continuations[j];
+
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    for (var k = 0; k < types.length; k++) {
+      var data = item[types[k]];
 
       if (data && data.continuation) {
         return {
           continuation: data.continuation,
           timeoutMs: typeof data.timeoutMs === "number" ? data.timeoutMs : null,
+          ended: false,
         };
       }
     }
@@ -482,6 +524,7 @@ function extractNextContinuation(continuations) {
   return {
     continuation: null,
     timeoutMs: null,
+    ended: ended,
   };
 }
 
@@ -700,44 +743,58 @@ function logPollFailure(event, error, attempt, session, continuation) {
 }
 
 async function fetchPollData(session, continuation, pollUrl, requestBody) {
+  var deadline = createYouTubeRequestDeadline();
   var pollResponse;
+  var responseBody;
 
   try {
     pollResponse = await fetch(pollUrl, {
       method: "POST",
       headers: buildPollHeaders(session),
       body: requestBody,
+      signal: deadline.controller.signal,
     });
+    responseBody = await pollResponse.text();
   } catch (err) {
-    throw createPollError("YouTube chat network request failed.", {
-      stage: "fetch",
-      status: null,
-      contentType: null,
-      retryAfter: null,
+    var timedOut = deadline.controller.signal.aborted;
+    var failedStatus = pollResponse ? pollResponse.status : null;
+    var failedContentType = pollResponse
+      ? pollResponse.headers.get("Content-Type") || null
+      : null;
+    var failedRetryAfter = pollResponse
+      ? pollResponse.headers.get("Retry-After") || null
+      : null;
+    var failureMessage = "YouTube chat network request failed.";
+    var failureStage = "fetch";
+
+    if (timedOut) {
+      failureMessage = "YouTube chat request timed out.";
+      failureStage = "timeout";
+    } else if (pollResponse) {
+      failureMessage = "YouTube chat response body could not be read.";
+      failureStage = "read";
+    }
+
+    throw createPollError(failureMessage, {
+      stage: failureStage,
+      status: failedStatus,
+      contentType: failedContentType,
+      retryAfter: failedRetryAfter,
       html: false,
       bodyPrefix: "",
-      retryable: true,
+      retryable:
+        timedOut ||
+        !pollResponse ||
+        pollResponse.ok ||
+        isRetryablePollStatus(failedStatus),
     });
+  } finally {
+    clearTimeout(deadline.timeout);
   }
 
   var status = pollResponse.status;
   var contentType = pollResponse.headers.get("Content-Type") || null;
   var retryAfter = pollResponse.headers.get("Retry-After") || null;
-  var responseBody;
-
-  try {
-    responseBody = await pollResponse.text();
-  } catch (err) {
-    throw createPollError("YouTube chat response body could not be read.", {
-      stage: "read",
-      status: status,
-      contentType: contentType,
-      retryAfter: retryAfter,
-      html: false,
-      bodyPrefix: "",
-      retryable: pollResponse.ok || isRetryablePollStatus(status),
-    });
-  }
 
   var html = looksLikeHtml(contentType, responseBody);
   var softBlock = isYouTubeSoftBlock(status, contentType, responseBody);
@@ -860,13 +917,17 @@ async function fetchChatBatch(session, continuation) {
     pollData.continuationContents.liveChatContinuation;
 
   if (!liveChatContinuation) {
-    throw createChatEndedError();
+    throw new Error("YouTube live-chat response was missing.");
   }
 
   var next = extractNextContinuation(liveChatContinuation.continuations);
 
-  if (!next.continuation) {
+  if (next.ended) {
     throw createChatEndedError();
+  }
+
+  if (!next.continuation) {
+    throw new Error("YouTube returned no recognized next continuation.");
   }
 
   return {
@@ -898,20 +959,30 @@ export async function onRequestGet(context) {
     encodeURIComponent(videoId);
 
   try {
-    var pageResponse = await fetch(chatUrl, {
-      headers: getBrowserHeaders(),
-    });
+    var deadline = createYouTubeRequestDeadline();
+    var pageResponse;
+    var html;
 
-    if (!pageResponse.ok) {
-      return jsonResponse(
-        {
-          error: "YouTube returned an unexpected chat-page response.",
-        },
-        502,
-      );
+    try {
+      pageResponse = await fetch(chatUrl, {
+        headers: getBrowserHeaders(),
+        signal: deadline.controller.signal,
+      });
+
+      if (!pageResponse.ok) {
+        return jsonResponse(
+          {
+            error: "YouTube returned an unexpected chat-page response.",
+          },
+          502,
+        );
+      }
+
+      html = await pageResponse.text();
+    } finally {
+      clearTimeout(deadline.timeout);
     }
 
-    var html = await pageResponse.text();
     var initialData = extractInitialData(html);
     var filterRenderer = findChatFilterRenderer(initialData);
     var unfilteredChat = findUnfilteredChat(filterRenderer);

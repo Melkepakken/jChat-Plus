@@ -1,8 +1,19 @@
 (function () {
   window.Chat = window.Chat || {};
 
+  var YOUTUBE_REQUEST_TIMEOUT_MS = 60000;
+
   function requestJson(url, options) {
-    return fetch(url, options || {}).then(function (response) {
+    var controller = new AbortController();
+    var requestOptions = Object.assign({}, options || {}, {
+      signal: controller.signal,
+    });
+    var timedOut = false;
+    var timeoutId = setTimeout(function () {
+      timedOut = true;
+      controller.abort();
+    }, YOUTUBE_REQUEST_TIMEOUT_MS);
+    var request = fetch(url, requestOptions).then(function (response) {
       var contentType = String(
         response.headers.get("Content-Type") || "",
       ).trim();
@@ -60,6 +71,25 @@
         return data;
       });
     });
+
+    return request.then(
+      function (data) {
+        clearTimeout(timeoutId);
+        return data;
+      },
+      function (err) {
+        clearTimeout(timeoutId);
+
+        if (timedOut) {
+          var timeoutError = new Error("YouTube request timed out.");
+
+          timeoutError.code = "youtube_request_timeout";
+          throw timeoutError;
+        }
+
+        throw err;
+      },
+    );
   }
 
   function getPollDelay(value) {
@@ -240,11 +270,13 @@
     youtubePolling: false,
     youtubeResolving: false,
     youtubeConnectionLost: false,
+    youtubePollFailureCount: 0,
     youtubeReconnectDelay: 5000,
     youtubeDiscoveryDelay: 30000,
     youtubeDebug: youtubeDebug,
     youtubePendingLatency: {},
     youtubeLatencyObserver: null,
+    youtubeRecentVideoId: null,
     youtubeRecentMessageIds: {},
     youtubeRecentMessageOrder: [],
     youtubeRecentMessageLimit: 300,
@@ -668,8 +700,12 @@
 
           Chat.info.youtubeSession = chatData.session;
           Chat.info.youtubeContinuation = chatData.continuation;
-          Chat.info.youtubeRecentMessageIds = {};
-          Chat.info.youtubeRecentMessageOrder = [];
+
+          if (Chat.info.youtubeRecentVideoId !== videoId) {
+            Chat.info.youtubeRecentVideoId = videoId;
+            Chat.info.youtubeRecentMessageIds = {};
+            Chat.info.youtubeRecentMessageOrder = [];
+          }
 
           var bootstrapMessages = Chat.filterNewYouTubeMessages(
             chatData.messages,
@@ -688,6 +724,9 @@
               Chat.removeYouTubeMessage(messageId);
             });
           }
+
+          Chat.info.youtubePollFailureCount = 0;
+          Chat.info.youtubeConnectionLost = false;
 
           console.log(
             "jChat YouTube: Connected to " +
@@ -726,6 +765,7 @@
       }
 
       Chat.info.youtubePollTimer = setTimeout(function () {
+        Chat.info.youtubePollTimer = null;
         Chat.pollYouTubeChat();
       }, getPollDelay(delay));
     },
@@ -768,21 +808,10 @@
                 arrivedAtMs: Date.now(),
               }
             : null;
-          Chat.info.youtubePolling = false;
-
-          if (Chat.info.youtubeConnectionLost) {
-            console.log("jChat YouTube: Connection restored");
-            Chat.info.youtubeConnectionLost = false;
-          }
-
-          if (!chatData.continuation) {
-            var endedError = new Error(
-              "YouTube returned no next continuation.",
+          if (!chatData || !chatData.continuation) {
+            throw new Error(
+              "YouTube returned incomplete live chat poll data.",
             );
-
-            endedError.code = "youtube_chat_ended";
-
-            throw endedError;
           }
 
           Chat.info.youtubeContinuation = chatData.continuation;
@@ -797,6 +826,14 @@
             chatData.deletedMessageIds.forEach(function (messageId) {
               Chat.removeYouTubeMessage(messageId);
             });
+          }
+
+          Chat.info.youtubePolling = false;
+          Chat.info.youtubePollFailureCount = 0;
+
+          if (Chat.info.youtubeConnectionLost) {
+            console.log("jChat YouTube: Connection restored");
+            Chat.info.youtubeConnectionLost = false;
           }
 
           Chat.scheduleYouTubePoll(chatData.timeoutMs);
@@ -816,6 +853,26 @@
           }
 
           Chat.info.youtubeConnectionLost = true;
+          Chat.info.youtubePollFailureCount++;
+
+          if (Chat.info.youtubePollFailureCount >= 2) {
+            var videoId = Chat.info.youtubeVideoId;
+            var source = Chat.info.youtubeActiveSource;
+
+            console.warn(
+              "jChat YouTube: Poll failed twice, refreshing the chat session",
+              err,
+            );
+
+            if (videoId) {
+              Chat.bootstrapYouTubeChat(videoId, source);
+            } else {
+              Chat.resetYouTubeConnection();
+              Chat.scheduleYouTubeResolve(Chat.info.youtubeReconnectDelay);
+            }
+
+            return;
+          }
 
           console.warn(
             "jChat YouTube: Poll failed, retrying in 5 seconds",
@@ -1019,6 +1076,7 @@
 
       Chat.info.youtubePollTimer = null;
       Chat.info.youtubePolling = false;
+      Chat.info.youtubePollFailureCount = 0;
       Chat.info.youtubeSession = null;
       Chat.info.youtubeContinuation = null;
       Chat.info.youtubeVideoId = null;
@@ -1036,6 +1094,7 @@
 
       Chat.resetYouTubeConnection();
 
+      Chat.info.youtubeRecentVideoId = null;
       Chat.info.youtubeRecentMessageIds = {};
       Chat.info.youtubeRecentMessageOrder = [];
       Chat.info.youtubePendingLatency = {};
