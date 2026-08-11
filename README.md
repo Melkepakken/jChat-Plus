@@ -1,6 +1,6 @@
 # [![](https://chat.melkepakken.tv/img/peepoHappy_plus_small.png)](#) jChat+
 
-[![Release](https://img.shields.io/badge/release-v1.2.1-blue)](#)
+[![Release](https://img.shields.io/badge/release-v1.2.2-blue)](#)
 [![Website](https://img.shields.io/website-up-down-green-red/https/chat.melkepakken.tv.svg)](https://chat.melkepakken.tv/)
 [![License](https://img.shields.io/github/license/Melkepakken/jchat-plus)](LICENSE)
 
@@ -30,7 +30,8 @@ This project is based on the original jChat by **giambaJ**. Huge credit to the o
 * YouTube custom emoji plus ordinary Unicode emoji using the existing Twemoji or Native setting
 * YouTube moderator message deletion and user retraction handling
 * YouTube bot, hidden-command, and blocked-user filtering
-* YouTube chat retry and reconnection handling
+* YouTube chat timeouts, retry, session recovery, and reconnection handling
+* Adaptive YouTube message pacing for smoother high-volume mixed-platform chat
 * Automatic return to YouTube handle discovery after a stream ends when a fallback channel is configured
 * Simulated YouTube preview messages
 * Kick channel auto-resolve with `kick=true`, `kick=<channel>`, or `kick_channel=<channel>`
@@ -423,7 +424,7 @@ These will be added in a later update.
 
 Current limitation:
 
-* YouTube polling follows the continuation timing returned by YouTube and may be behind the visible web chat.
+* YouTube chat follows the polling cadence returned by YouTube. jChat+ paces larger message batches for smoother mixed-platform chat, but YouTube messages may still arrive in bursts or appear behind the visible web chat.
 
 ---
 
