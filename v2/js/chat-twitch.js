@@ -141,7 +141,7 @@
 
                 if (
                   (!Chat.info.hideBadges &&
-                    !Chat.info.hideAllBadges &&
+                    Chat.shouldRenderNormalBadges() &&
                     Chat.info.bttvBadges &&
                     Chat.info.seventvBadges &&
                     Chat.info.chatterinoBadges &&

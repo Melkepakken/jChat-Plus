@@ -353,7 +353,7 @@
 
       if (
         (!Chat.info.hideBadges &&
-          !Chat.info.hideAllBadges &&
+          Chat.shouldRenderNormalBadges() &&
           Chat.info.bttvBadges &&
           Chat.info.seventvBadges &&
           Chat.info.chatterinoBadges &&
@@ -427,8 +427,10 @@
       Chat.info.hideCommands = truthy("hide_commands");
       Chat.info.hideBadges = truthy("hide_badges");
       Chat.info.hideAllBadges = params.has("hide_all_badges");
-      Chat.info.platformBadges =
-        !params.has("platform_badges") || truthy("platform_badges");
+      Chat.info.platformBadges = Chat.getPlatformBadgeMode(
+        params.get("platform_badges"),
+        params.has("platform_badges"),
+      );
       Chat.info.smallCaps = truthy("small_caps");
 
       Chat.info.fade = params.has("fade")

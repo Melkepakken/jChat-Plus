@@ -172,6 +172,10 @@ form[name="generator"] {
     grid-template-columns: 1fr 54px;
 }
 
+.toggle_row.platform_badges_row {
+    grid-template-columns: 1fr 76px;
+}
+
 .inline_controls {
     display: flex;
     align-items: center;

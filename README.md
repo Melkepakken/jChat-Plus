@@ -359,9 +359,13 @@ The frontend should never expose either value.
 | ----------------- | ---------------------- | ----------------------------------- |
 | `seventv_paints`  | `seventv_paints=true`  | Enable 7TV name paints              |
 | `emote_shadow`    | `emote_shadow=true`    | Add shadows to emotes, rendered emoji, and cheers |
-| `platform_badges` | `platform_badges=false` | Disable Twitch, Kick, and YouTube platform badges (enabled by default) |
+| `platform_badges` | `platform_badges=true`  | Show Twitch, Kick, and YouTube platform badges (default when omitted) |
+| `platform_badges` | `platform_badges=false` | Hide platform badges only; other badges are unchanged |
+| `platform_badges` | `platform_badges=only`  | Show platform logos while hiding all other badges |
 | `ffz_room_badges` | `ffz_room_badges=true` | Enable legacy FFZ room badge lookup |
 | `ffz_user_badges` | `ffz_user_badges=true` | Enable legacy FFZ user badge lookup |
+
+`hide_badges=true` keeps its legacy behavior: it hides special/user badges while leaving normal Twitch/Kick badges and enabled platform badges visible. `hide_all_badges` overrides every badge setting, so no badges are shown even with `platform_badges=only`.
 
 ---
 

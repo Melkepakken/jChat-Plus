@@ -117,7 +117,8 @@ function getOverlayData(options) {
     emote_shadow: $emote_shadow.is(":checked"),
     bots: $bots.is(":checked"),
     hide_commands: $commands.is(":checked"),
-    platform_badges: $platform_badges.is(":checked") ? false : "false",
+    platform_badges:
+      $platform_badges.val() === "true" ? false : $platform_badges.val(),
     hide_badges: !$all_badges.is(":checked") && $badges.is(":checked"),
     hide_all_badges: $all_badges.is(":checked"),
     animate: $animate.is(":checked"),
@@ -270,7 +271,7 @@ function resetForm() {
 
   $bots.prop("checked", true);
   $commands.prop("checked", false);
-  $platform_badges.prop("checked", true);
+  $platform_badges.val("true");
   $badges.prop("checked", false);
   $all_badges.prop("checked", false);
 
@@ -342,7 +343,7 @@ const $emote_shadow = $('input[name="emote_shadow"]');
 
 const $bots = $('input[name="bots"]');
 const $commands = $("input[name='commands']");
-const $platform_badges = $('input[name="platform_badges"]');
+const $platform_badges = $('select[name="platform_badges"]');
 const $badges = $("input[name='badges']");
 const $all_badges = $("input[name='all_badges']");
 

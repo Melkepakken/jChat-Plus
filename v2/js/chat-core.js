@@ -17,6 +17,13 @@
 
 window.Chat = window.Chat || {};
 
+Chat.getPlatformBadgeMode = function (value, provided) {
+  if (!provided) return "on";
+  if (/^only$/i.test(value)) return "only";
+
+  return /^(1|true|yes)$/i.test(value) ? "on" : "off";
+};
+
 $.extend(true, Chat, {
   info: {
     channel: null,
@@ -69,10 +76,10 @@ $.extend(true, Chat, {
         ? $.QueryString.hide_badges.toLowerCase() === "true"
         : false,
     hideAllBadges: "hide_all_badges" in $.QueryString,
-    platformBadges:
-      "platform_badges" in $.QueryString
-        ? /^(1|true|yes)$/i.test($.QueryString.platform_badges)
-        : true,
+    platformBadges: Chat.getPlatformBadgeMode(
+      $.QueryString.platform_badges,
+      "platform_badges" in $.QueryString,
+    ),
     nicknameColor: "cN" in $.QueryString ? $.QueryString.cN : false,
     emojiStyle:
       "emoji" in $.QueryString && $.QueryString.emoji.toLowerCase() === "native"
