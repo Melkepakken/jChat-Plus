@@ -12,6 +12,7 @@ const fonts = [
   "PressStart2P",
   "Wallpoet",
   "Verdana",
+  "Inter",
 ];
 
 const sizes = ["small", "medium", "large", "mediumlarge"];
