@@ -4,15 +4,24 @@
 window.JCHAT_UPDATES = [
   {
     type: "update",
+    date: "2026-09-06",
+    title: "More Twitch GIF controls",
+    summary:
+      "Twitch GIFs now have Small, Medium and Large sizes, optional shadows, and better preview testing for GIFs and 7TV name paints.",
+  },
+  {
+    type: "update",
     date: "2026-09-05",
     title: "Choose your chat platforms",
-    summary: "Use Twitch, Kick or YouTube on its own, or combine any of them in one overlay.",
+    summary:
+      "Use Twitch, Kick or YouTube on its own, or combine any of them in one overlay.",
   },
   {
     type: "update",
     date: "2026-09-05",
     title: "Optional Twitch GIFs",
-    summary: "Show native Twitch chat GIFs in your overlay with Show GIFs. Off by default.",
+    summary:
+      "Show native Twitch chat GIFs in your overlay with Show GIFs. Off by default.",
   },
   {
     type: "update",

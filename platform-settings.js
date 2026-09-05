@@ -101,6 +101,11 @@
     return found && enabled;
   }
 
+  function normalizeGifSize(value) {
+    var size = String(value || "").trim().toLowerCase();
+    return /^(small|medium|large)$/.test(size) ? size : "medium";
+  }
+
   function parse(input) {
     var params = paramsFrom(input);
     var twitchChannel = normalizeTwitchChannel(params.get("channel"));
@@ -135,12 +140,14 @@
       kick: { selected: kickSelected, enabled: kickSelected && Boolean(roomId || kickChannel), channel: kickChannel, roomId: roomId },
       youtube: { selected: youtubeSelected, enabled: youtubeSelected && Boolean(videoId || youtubeHandle), handle: youtubeHandle, videoId: videoId, disabled: youtubeDisabled },
       showGifs: twitchSelected && strictGifFlag(params),
+      gifSize: normalizeGifSize(params.get("gif_size")),
     };
   }
 
   window.jChatPlatformSettings = {
     parse: parse,
     strictGifFlag: strictGifFlag,
+    normalizeGifSize: normalizeGifSize,
     normalizeTwitchChannel: normalizeTwitchChannel,
     normalizeKickChannel: normalizeKickChannel,
     normalizeYouTubeHandle: normalizeYouTubeHandle,

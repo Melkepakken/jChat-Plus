@@ -36,6 +36,7 @@ $.extend(true, Chat, {
     channelID: null,
     platforms: null,
     showGifs: false,
+    gifSize: "medium",
     startupGeneration: 0,
     preview:
       "preview" in $.QueryString
@@ -169,6 +170,7 @@ $.extend(true, Chat, {
     Chat.info.youtubeDirectVideoId = settings.youtube.videoId;
     Chat.info.youtubeDirectVideoPending = Boolean(settings.youtube.videoId);
     Chat.info.showGifs = settings.showGifs && Chat.isPlatformEnabled("twitch");
+    Chat.info.gifSize = settings.gifSize;
     return settings;
   },
 

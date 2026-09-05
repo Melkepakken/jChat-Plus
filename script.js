@@ -26,7 +26,14 @@ function twitchOption() {
   const enabled = $twitch_enabled.is(":checked");
   $twitch_controls.toggleClass("hidden", !enabled);
   $twitch_controls.find("input").prop("disabled", !enabled);
+  gifSizeOption();
   updatePlatformHints();
+}
+
+function gifSizeOption() {
+  const enabled = $twitch_enabled.is(":checked") && $show_gifs.is(":checked");
+  $gif_size_row.toggleClass("hidden", !enabled);
+  $gif_size.prop("disabled", !enabled);
 }
 
 function youtubeOption() {
@@ -167,6 +174,7 @@ function getOverlayData(options) {
   const isPreview = options && options.preview;
   const fields = getPlatformFields();
   const settings = window.jChatPlatformSettings;
+  const showGifs = fields.twitchEnabled && $show_gifs.is(":checked");
 
   return {
     // Preview selections carry no user identities and never validate sources online.
@@ -175,7 +183,8 @@ function getOverlayData(options) {
     kick: isPreview ? String(fields.kickEnabled) : settings.formatKickChannel(fields.kickChannel),
     youtube: isPreview ? String(fields.youtubeEnabled) : settings.formatYouTubeHandle(fields.youtubeHandle),
     youtube_video: isPreview ? false : fields.youtubeVideo,
-    GIFs: fields.twitchEnabled && $show_gifs.is(":checked") ? "true" : false,
+    GIFs: showGifs ? "true" : false,
+    gif_size: showGifs ? settings.normalizeGifSize($gif_size.val()) : false,
     size: $size.val(),
     font: $font.val(),
     stroke: $stroke.val() !== "0" ? $stroke.val() : false,
@@ -316,6 +325,7 @@ function resetForm() {
   $channel.val("");
   $twitch_enabled.prop("checked", true);
   $show_gifs.prop("checked", false);
+  $gif_size.val("medium");
 
   $size.val("2");
   $font.val("0");
@@ -394,6 +404,8 @@ const $channel = $('input[name="channel"]');
 const $twitch_enabled = $('input[name="twitch_enabled"]');
 const $twitch_controls = $("#twitch_controls");
 const $show_gifs = $('input[name="show_gifs"]');
+const $gif_size = $('select[name="gif_size"]');
+const $gif_size_row = $("#gif_size_row");
 
 const $size = $("select[name='size']");
 const $font = $("select[name='font']");
@@ -461,6 +473,8 @@ $twitch_enabled.change(function () {
   twitchOption();
   schedulePreviewUpdate();
 });
+
+$show_gifs.change(gifSizeOption);
 
 $kick_enabled.change(function () {
   kickOption();

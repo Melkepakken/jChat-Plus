@@ -48,7 +48,7 @@ That's it. You do not need to set up Cloudflare or edit query parameters for nor
 
 jChat+ supports Twitch chat, Twitch badges and cheermotes, custom channel badges, and BTTV, FFZ, and 7TV emotes. It also supports 7TV paints and user cosmetics, plus `!reloadchat` from Twitch moderators.
 
-**Show GIFs** displays native Twitch chat GIFs inside their message, with a maximum area of about 240 × 160 pixels. It is off by default. When it is off, or a GIF cannot load, the original caption stays visible. Animated emotes and 7TV animations are unaffected. This option only changes your overlay; it does not change Twitch channel settings or who can send GIFs. The current 7TV name-paint integration uses Twitch identities.
+**Show GIFs** displays native Twitch chat GIFs inside their message. Choose Small (160px wide), Medium (240px), or Large (360px); all use a 3:2 media area and shrink to fit narrow overlays. Medium is the default and matches the original 240 × 160 size. GIFs are off by default. When off, or a GIF cannot load, the original caption stays visible. Animated emotes and 7TV animations are unaffected. This option only changes your overlay; it does not change Twitch channel settings or who can send GIFs. The current 7TV name-paint integration uses Twitch identities.
 
 ### Kick
 
@@ -210,6 +210,7 @@ Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showin
 | ----------------- | ---------------------- | ----------------------------------- |
 | `seventv_paints`  | `seventv_paints=true`  | Enable 7TV name paints              |
 | `GIFs`           | `GIFs=true`            | Display native Twitch chat GIFs (off by default) |
+| `gif_size`       | `gif_size=small`, `gif_size=medium`, `gif_size=large` | Twitch GIF size; Medium is the original size and default. Values ignore case and surrounding whitespace; invalid or empty values use Medium. |
 | `emote_shadow`    | `emote_shadow=true`    | Add shadows to emotes, rendered emoji, cheers, and Twitch GIFs |
 | `platform_badges` | `platform_badges=true`  | Show Twitch, Kick, and YouTube platform badges (default when omitted) |
 | `platform_badges` | `platform_badges=false` | Hide platform badges only; other badges are unchanged |

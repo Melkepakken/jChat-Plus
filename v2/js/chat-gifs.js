@@ -93,6 +93,10 @@
     createGifPlaceholder: function (range) {
       var slot = document.createElement("span");
       slot.className = "chat_gif";
+      slot.classList.add(
+        Chat.info.gifSize === "small" ? "chat_gif_size_small" :
+        Chat.info.gifSize === "large" ? "chat_gif_size_large" : "chat_gif_size_medium",
+      );
       slot.setAttribute("data-gif-url", range.url);
       var caption = document.createElement("span");
       caption.className = "chat_gif_caption";
