@@ -294,7 +294,11 @@
   function getConfiguredYouTubeHandle() {
     var value = Chat.info.youtubeOption;
 
-    if (Chat.info.youtubeDisabled || !value) {
+    if (
+      Chat.info.youtubeDisabled ||
+      Chat.info.youtubeHandleUnavailable ||
+      !value
+    ) {
       return null;
     }
 
@@ -320,6 +324,20 @@
     }
 
     return normalizeYouTubeHandle(Chat.info.channel);
+  }
+
+  function markYouTubeHandleUnavailable() {
+    if (Chat.info.youtubeHandleUnavailable) {
+      return;
+    }
+
+    // Keep this page-lifetime decision across connection resets and stops.
+    Chat.info.youtubeHandleUnavailable = true;
+    Chat.info.youtubeHandle = false;
+
+    console.warn(
+      "jChat YouTube: Channel unavailable for automatic discovery; disabled until reload",
+    );
   }
 
   function validatedDiscoveryResponse(data) {
@@ -425,6 +443,7 @@
     youtubeOption: youtubeOption,
     youtubeDisabled: youtubeDisabled,
     youtubeHandle: false,
+    youtubeHandleUnavailable: false,
     youtubeDirectVideoId: youtubeDirectVideoId,
     youtubeDirectVideoPending: Boolean(youtubeDirectVideoId),
     youtubeActiveSource: null,
@@ -815,6 +834,14 @@
           }
 
           Chat.info.youtubeResolving = false;
+
+          if (err && err.code === "youtube_channel_unavailable") {
+            markYouTubeHandleUnavailable();
+            Chat.resetYouTubeConnection();
+            Chat.info.youtubeActiveSource = null;
+            return;
+          }
+
           var retryDelay = nextDiscoveryFailureDelay(err);
 
           console.warn(
@@ -992,6 +1019,13 @@
 
           Chat.info.youtubeDirectProbeInFlight = false;
           Chat.info.youtubeDirectProbeController = null;
+
+          if (err && err.code === "youtube_channel_unavailable") {
+            markYouTubeHandleUnavailable();
+            Chat.clearYouTubeDirectRecovery();
+            return;
+          }
+
           var retryDelay = nextDirectProbeFailureDelay(err);
           Chat.info.youtubeDirectProbeAllowedAt = Date.now() + retryDelay;
 
