@@ -6,25 +6,60 @@ window.JCHAT_UPDATES = [
     type: "update",
     date: "2026-09-05",
     title: "YouTube reliability improvements",
-    summary: "YouTube stream discovery, retries and old chat handling are now much more reliable."
+    summary:
+      "YouTube stream discovery, retries and old chat handling are now much more reliable.",
   },
   {
     type: "incident",
     date: "2026-09-05",
     title: "YouTube discovery issue resolved",
-    summary: "A problem that could cause excessive YouTube stream checks has been fixed.",
-    active: false
+    summary:
+      "A problem that could cause excessive YouTube stream checks has been fixed.",
+    active: false,
   },
   {
     type: "update",
     date: "2026-08-28",
     title: "Inter font added",
-    summary: "Inter is now available as an overlay font."
-  }
+    summary: "Inter is now available as an overlay font.",
+  },
+  {
+    type: "update",
+    date: "2026-08-11",
+    title: "Platform badges added",
+    summary:
+      "Twitch, Kick and YouTube messages can now show which platform they came from.",
+  },
+  {
+    type: "update",
+    date: "2026-08-07",
+    title: "YouTube chat added",
+    summary: "jChat+ now supports YouTube Live Chat alongside Twitch and Kick.",
+  },
+  {
+    type: "update",
+    date: "2026-06-30",
+    title: "jChat+ 1.0 released",
+    summary:
+      "The first stable version of jChat+ launched with Twitch and Kick support, modern emotes, badges and customization.",
+  },
 ];
 
 (function () {
-  var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
 
   function textElement(tag, text, className) {
     var element = document.createElement(tag);
@@ -41,13 +76,22 @@ window.JCHAT_UPDATES = [
     meta.className = "update-meta";
     // Format the calendar date directly so time zones cannot shift the day.
     var parts = entry.date.split("-");
-    var date = textElement("time", Number(parts[2]) + " " + months[Number(parts[1]) - 1] + " " + parts[0]);
+    var date = textElement(
+      "time",
+      Number(parts[2]) + " " + months[Number(parts[1]) - 1] + " " + parts[0],
+    );
     date.setAttribute("datetime", entry.date);
     meta.appendChild(date);
 
     if (entry.type === "incident") {
       var active = entry.active === true;
-      meta.appendChild(textElement("span", active ? "Active" : "Resolved", "update-status status-" + (active ? "active" : "resolved")));
+      meta.appendChild(
+        textElement(
+          "span",
+          active ? "Active" : "Resolved",
+          "update-status status-" + (active ? "active" : "resolved"),
+        ),
+      );
     }
 
     card.appendChild(meta);
@@ -63,9 +107,11 @@ window.JCHAT_UPDATES = [
     var incidents = entries.filter(function (entry) {
       return entry.type === "incident" && entry.active === true;
     });
-    var updates = entries.filter(function (entry) {
-      return entry.type === "update";
-    }).slice(0, 3);
+    var updates = entries
+      .filter(function (entry) {
+        return entry.type === "update";
+      })
+      .slice(0, 3);
 
     var notices = document.getElementById("site-incidents");
     if (notices) {
