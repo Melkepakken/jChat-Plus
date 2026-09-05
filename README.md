@@ -61,6 +61,8 @@ jChat+ can find a Kick chatroom from its channel name, or use a manually supplie
 
 jChat+ can find a public live broadcast from a YouTube handle or channel URL. You can also connect directly with a video ID or URL, which is required for unlisted streams.
 
+Automatic handle discovery backs off while a channel remains offline, from about one minute to several minutes between checks. A new public broadcast may therefore take a few minutes to appear, and can take longer when YouTube discovery or search is unavailable or quota-limited. This does not slow polling after Live Chat is connected. Direct `youtube_video` mode bypasses Data API discovery. If a daily discovery quota is exhausted, affected calls pause until the next Pacific-time reset and retry automatically.
+
 Supported YouTube features include:
 
 * Explicit Live Chat, with no silent fallback to Top Chat
@@ -339,6 +341,8 @@ The YouTube Functions handle separate parts of YouTube support:
 
 * `functions/api/youtube/live.js` uses the official YouTube Data API v3 to find the current live stream for a handle.
 * `functions/api/youtube/chat.js` uses the public web chat connector to read Live Chat messages, custom emoji, and deletion actions.
+
+Discovery backoff and quota cooldowns use Cloudflare's Cache API. Its contents are local to the data center handling the request and may be evicted; concurrent work is coalesced only within the current Worker isolate. These safeguards reduce duplicate API calls, but they are not global coordination or an unlimited-scale guarantee.
 
 Live Chat reading does not require YouTube OAuth.
 
