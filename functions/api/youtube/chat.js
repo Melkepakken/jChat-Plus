@@ -1,13 +1,19 @@
-var YOUTUBE_CHAT_CONNECTOR_VERSION = "1";
+var YOUTUBE_CHAT_CONNECTOR_VERSION = "2";
 
-function jsonResponse(body, status) {
+function jsonResponse(body, status, retryAfterMs) {
+  var headers = {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+    "X-JChat-Chat-Version": YOUTUBE_CHAT_CONNECTOR_VERSION,
+  };
+
+  if (Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+    headers["Retry-After"] = String(Math.ceil(retryAfterMs / 1000));
+  }
+
   return new Response(JSON.stringify(body), {
     status: status || 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-      "X-JChat-Chat-Version": YOUTUBE_CHAT_CONNECTOR_VERSION,
-    },
+    headers: headers,
   });
 }
 
@@ -18,6 +24,116 @@ var YOUTUBE_CHAT_REQUEST_TIMEOUT_MS = 15 * 1000;
 var YOUTUBE_WARNING_SUPPRESSION_MS = 60 * 1000;
 var YOUTUBE_MAX_WARNING_ENTRIES = 128;
 var youtubeWarningDeadlines = new Map();
+var YOUTUBE_CHAT_UNAVAILABLE_MS = 5 * 60 * 1000;
+var YOUTUBE_MAX_UNAVAILABLE_ENTRIES = 128;
+var youtubeUnavailableDeadlines = new Map();
+
+function chatUnavailableCacheKey(context, videoId) {
+  var url = new URL(context.request.url);
+  url.pathname = "/__jchat-youtube-chat-cache/v1/unavailable/" + videoId;
+  url.search = "";
+  url.hash = "";
+  return new Request(url.toString(), { method: "GET" });
+}
+
+function pruneChatUnavailableMemory() {
+  var now = Date.now();
+
+  youtubeUnavailableDeadlines.forEach(function (expiresAt, key) {
+    if (expiresAt <= now) {
+      youtubeUnavailableDeadlines.delete(key);
+    }
+  });
+
+  while (youtubeUnavailableDeadlines.size > YOUTUBE_MAX_UNAVAILABLE_ENTRIES) {
+    youtubeUnavailableDeadlines.delete(youtubeUnavailableDeadlines.keys().next().value);
+  }
+}
+
+async function readChatUnavailable(context, videoId) {
+  pruneChatUnavailableMemory();
+  var key = chatUnavailableCacheKey(context, videoId);
+  var expiresAt = youtubeUnavailableDeadlines.get(key.url);
+
+  if (expiresAt > Date.now()) {
+    return expiresAt;
+  }
+
+  try {
+    var cache = globalThis.caches && globalThis.caches.default;
+    var response = cache && await cache.match(key);
+    var entry = response && response.ok && await response.json();
+    var now = Date.now();
+
+    if (
+      entry && entry.videoId === videoId &&
+      Number.isFinite(entry.expiresAt) && entry.expiresAt > now &&
+      entry.expiresAt <= now + YOUTUBE_CHAT_UNAVAILABLE_MS
+    ) {
+      // Copy the original deadline, never renew it on cache hits.
+      youtubeUnavailableDeadlines.set(key.url, entry.expiresAt);
+      pruneChatUnavailableMemory();
+      return entry.expiresAt;
+    }
+  } catch (err) {
+    // Cache API failures must not prevent bootstrap or the memory fallback.
+  }
+
+  return null;
+}
+
+async function cacheChatUnavailable(context, videoId) {
+  var key = chatUnavailableCacheKey(context, videoId);
+  var expiresAt = Date.now() + YOUTUBE_CHAT_UNAVAILABLE_MS;
+  youtubeUnavailableDeadlines.set(key.url, expiresAt);
+  pruneChatUnavailableMemory();
+
+  try {
+    var cache = globalThis.caches && globalThis.caches.default;
+
+    if (cache) {
+      await cache.put(key, new Response(JSON.stringify({
+        videoId: videoId,
+        expiresAt: expiresAt,
+      }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=" + YOUTUBE_CHAT_UNAVAILABLE_MS / 1000,
+        },
+      }));
+    }
+  } catch (err) {
+    // The bounded in-isolate deadline is already available to old clients.
+  }
+
+  return expiresAt;
+}
+
+function chatUnavailableResponse(expiresAt) {
+  var retryAfterMs = Math.max(1, Math.ceil(expiresAt - Date.now()));
+  return jsonResponse({
+    code: "youtube_chat_unavailable",
+    error: "YouTube Live Chat is not currently available for this video.",
+    retryAfterMs: retryAfterMs,
+  }, 503, retryAfterMs);
+}
+
+function logChatUnavailable(context, videoId, diagnostic, expiresAt) {
+  var warning = {
+    operation: "bootstrap_get",
+    stage: diagnostic.stage,
+    code: diagnostic.code,
+    status: diagnostic.status,
+    videoId: videoId,
+    clientVersion: readClientVersion(context.request),
+    connectorVersion: YOUTUBE_CHAT_CONNECTOR_VERSION,
+    retryAfterMs: Math.max(1, Math.ceil(expiresAt - Date.now())),
+  };
+
+  if (shouldLogChatWarning("bootstrap_get", videoId, warning)) {
+    console.warn("[youtube-chat] Chat unavailable", warning);
+  }
+}
 
 function shouldLogChatWarning(operation, videoId, warning) {
   var now = Date.now();
@@ -300,6 +416,7 @@ function extractNumberField(source, key) {
 
 function findChatFilterRenderer(root) {
   var stack = [root];
+  var malformedRenderer = false;
 
   while (stack.length) {
     var value = stack.pop();
@@ -308,11 +425,15 @@ function findChatFilterRenderer(root) {
       continue;
     }
 
-    if (
-      value.sortFilterSubMenuRenderer &&
-      Array.isArray(value.sortFilterSubMenuRenderer.subMenuItems)
-    ) {
-      return value.sortFilterSubMenuRenderer;
+    if (Object.prototype.hasOwnProperty.call(value, "sortFilterSubMenuRenderer")) {
+      if (
+        value.sortFilterSubMenuRenderer &&
+        Array.isArray(value.sortFilterSubMenuRenderer.subMenuItems)
+      ) {
+        return value.sortFilterSubMenuRenderer;
+      }
+
+      malformedRenderer = true;
     }
 
     if (Array.isArray(value)) {
@@ -328,6 +449,10 @@ function findChatFilterRenderer(root) {
     for (var j = 0; j < keys.length; j++) {
       stack.push(value[keys[j]]);
     }
+  }
+
+  if (malformedRenderer) {
+    throw new Error("YouTube chat filter data was malformed.");
   }
 
   return null;
@@ -1125,6 +1250,12 @@ export async function onRequestGet(context) {
     );
   }
 
+  var unavailableUntil = await readChatUnavailable(context, videoId);
+
+  if (unavailableUntil) {
+    return chatUnavailableResponse(unavailableUntil);
+  }
+
   var bootstrapStartedAtMs = Date.now();
 
   var chatUrl =
@@ -1156,6 +1287,7 @@ export async function onRequestGet(context) {
         logChatFailure(context, "bootstrap_get", videoId, diagnostic);
         return jsonResponse(
           {
+            code: "youtube_chat_error",
             error: "YouTube returned an unexpected chat-page response.",
           },
           502,
@@ -1186,22 +1318,32 @@ export async function onRequestGet(context) {
 
     if (initialData) {
       diagnostic.stage = "chat_filter";
-      diagnostic.code = "chat_filter_missing";
+      diagnostic.code = "chat_filter_invalid";
     }
 
     var filterRenderer = findChatFilterRenderer(initialData);
 
     if (filterRenderer) {
       diagnostic.stage = "unfiltered_chat";
-      diagnostic.code = "unfiltered_chat_missing";
+      diagnostic.code = "unfiltered_chat_invalid";
     }
 
     var unfilteredChat = findUnfilteredChat(filterRenderer);
 
     if (!unfilteredChat) {
+      if (initialData) {
+        diagnostic.code = filterRenderer
+          ? "unfiltered_chat_missing"
+          : "chat_filter_missing";
+        unavailableUntil = await cacheChatUnavailable(context, videoId);
+        logChatUnavailable(context, videoId, diagnostic, unavailableUntil);
+        return chatUnavailableResponse(unavailableUntil);
+      }
+
       logChatFailure(context, "bootstrap_get", videoId, diagnostic);
       return jsonResponse(
         {
+          code: "youtube_chat_error",
           error: "The unfiltered YouTube chat feed was not found.",
         },
         502,
@@ -1222,6 +1364,7 @@ export async function onRequestGet(context) {
       logChatFailure(context, "bootstrap_get", videoId, diagnostic);
       return jsonResponse(
         {
+          code: "youtube_chat_error",
           error: "YouTube Innertube configuration was incomplete.",
         },
         502,

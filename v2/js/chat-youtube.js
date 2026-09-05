@@ -3,6 +3,7 @@
 
   var YOUTUBE_REQUEST_TIMEOUT_MS = 60000;
   var YOUTUBE_MAX_TIMER_DELAY_MS = 2147483647;
+  var YOUTUBE_CHAT_UNAVAILABLE_RETRY_DELAY_MS = 300000;
   var YOUTUBE_DISCOVERY_FAILURE_DELAYS = [15000, 30000, 60000, 120000, 300000];
   var YOUTUBE_BOOTSTRAP_RETRY_DELAYS = [5000, 15000];
   var YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS = [
@@ -947,7 +948,7 @@
       Chat.info.youtubeDirectProbeController = probeController;
 
       console.log(
-        "jChat YouTube: Direct video failed repeatedly; checking fallback @" +
+        "jChat YouTube: Direct chat could not start; checking fallback @" +
           handle,
       );
 
@@ -1135,6 +1136,34 @@
 
           if (err && err.code === "youtube_chat_ended") {
             Chat.handleYouTubeChatEnded();
+            return;
+          }
+
+          if (err && err.code === "youtube_chat_unavailable") {
+            var unavailableDelay = responseRetryDelay(
+              err.retryAfterMs,
+              err.retryAfter,
+            );
+
+            if (unavailableDelay === null) {
+              unavailableDelay = YOUTUBE_CHAT_UNAVAILABLE_RETRY_DELAY_MS;
+            }
+
+            if (activeSource === "video" && preserveDirectRecovery) {
+              Chat.resetYouTubeConnection(true);
+              Chat.info.youtubeBootstrapFailureCount = bootstrapAttempt;
+              Chat.scheduleYouTubeBootstrap(
+                videoId,
+                activeSource,
+                bootstrapAttempt,
+                unavailableDelay,
+              );
+              Chat.probeYouTubeFallback(videoId);
+            } else {
+              Chat.resetYouTubeConnection();
+              Chat.scheduleYouTubeResolve(unavailableDelay);
+            }
+
             return;
           }
 
