@@ -16,6 +16,8 @@
 })(jQuery);
 
 window.Chat = window.Chat || {};
+Chat.version = "1.2.5";
+console.log("jChat+ v" + Chat.version);
 
 Chat.getPlatformBadgeMode = function (value, provided) {
   if (!provided) return "on";

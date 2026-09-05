@@ -1,6 +1,6 @@
 # [![](https://chat.melkepakken.tv/img/peepoHappy_plus_small.png)](#) jChat+
 
-[![Release](https://img.shields.io/badge/release-v1.2.4-blue)](#)
+[![Release](https://img.shields.io/github/v/release/Melkepakken/jChat-Plus)](https://github.com/Melkepakken/jChat-Plus/releases/latest)
 [![Website](https://img.shields.io/website-up-down-green-red/https/chat.melkepakken.tv.svg)](https://chat.melkepakken.tv/)
 [![License](https://img.shields.io/github/license/Melkepakken/jchat-plus)](LICENSE)
 
@@ -341,6 +341,8 @@ The YouTube Functions handle separate parts of YouTube support:
 
 * `functions/api/youtube/live.js` uses the official YouTube Data API v3 to find the current live stream for a handle.
 * `functions/api/youtube/chat.js` uses the public web chat connector to read Live Chat messages, custom emoji, and deletion actions.
+
+jChat+ includes its client version on YouTube backend requests for diagnostics only; it is not used for authentication or runtime behavior.
 
 Discovery backoff and quota cooldowns use Cloudflare's Cache API. Its contents are local to the data center handling the request and may be evicted; concurrent work is coalesced only within the current Worker isolate. These safeguards reduce duplicate API calls, but they are not global coordination or an unlimited-scale guarantee.
 

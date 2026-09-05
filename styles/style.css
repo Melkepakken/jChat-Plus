@@ -275,16 +275,6 @@ select {
     display: none !important;
 }
 
-.youtube_warning {
-    margin: 9px 0 6px;
-    padding: 8px 10px;
-    border-left: 3px solid #ffcc00;
-    background: rgba(255, 204, 0, 0.08);
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 0.75em;
-    line-height: 1.4;
-}
-
 #fade_seconds {
     font-size: 0.75em;
     font-weight: 300;

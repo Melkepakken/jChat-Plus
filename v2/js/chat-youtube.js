@@ -62,7 +62,15 @@
 
   function requestJson(url, options) {
     var controller = new AbortController();
+    var requestHeaders = Object.assign(
+      {},
+      (options && options.headers) || {},
+      {
+        "X-JChat-Client-Version": Chat.version,
+      },
+    );
     var requestOptions = Object.assign({}, options || {}, {
+      headers: requestHeaders,
       signal: controller.signal,
     });
     var timedOut = false;

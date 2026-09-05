@@ -1,4 +1,5 @@
 const YOUTUBE_API_ROOT = "https://www.googleapis.com/youtube/v3/";
+const YOUTUBE_RESOLVER_VERSION = "2";
 const YOUTUBE_API_TIMEOUT_MS = 15000;
 const MAX_UPLOADS = 50;
 const CACHE_VERSION = "v1";
@@ -50,6 +51,7 @@ function jsonResponse(body, status = 200, retryAfterMs = null) {
   const headers = {
     "Content-Type": "application/json",
     "Cache-Control": "no-store",
+    "X-JChat-Resolver-Version": YOUTUBE_RESOLVER_VERSION,
   };
   const retryDelay = validRetryAfterMs(retryAfterMs);
 
@@ -110,7 +112,32 @@ function safeLogToken(value) {
     : null;
 }
 
-function logWarningOnce(key, message, details = {}) {
+function readClientVersion(request) {
+  let value = null;
+
+  try {
+    value = request?.headers?.get?.("X-JChat-Client-Version");
+  } catch {
+    return null;
+  }
+
+  const version = typeof value === "string" ? value.trim() : "";
+
+  return version.length <= 32 &&
+    /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)
+    ? version
+    : null;
+}
+
+function diagnosticDetails(context, details = {}) {
+  return {
+    ...details,
+    clientVersion: readClientVersion(context?.request),
+    resolverVersion: YOUTUBE_RESOLVER_VERSION,
+  };
+}
+
+function logWarningOnce(context, key, message, details = {}) {
   const now = Date.now();
   const deadline = warningDeadlines.get(key) || 0;
 
@@ -124,7 +151,7 @@ function logWarningOnce(key, message, details = {}) {
     warningDeadlines.delete(warningDeadlines.keys().next().value);
   }
 
-  console.warn(message, details);
+  console.warn(message, diagnosticDetails(context, details));
 }
 
 async function fetchApi(path, params, apiKey, stage) {
@@ -428,6 +455,7 @@ async function readCache(context, kind, handle) {
     return shared;
   } catch {
     logWarningOnce(
+      context,
       `cache-read-${kind}`,
       "[youtube-live] Internal cache read failed; using isolate memory.",
       { kind },
@@ -465,6 +493,7 @@ async function writeCache(context, kind, handle, value, ttl) {
     );
   } catch {
     logWarningOnce(
+      context,
       `cache-write-${kind}`,
       "[youtube-live] Internal cache write failed; using isolate memory.",
       { kind },
@@ -485,6 +514,7 @@ async function deleteCache(context, kind, handle) {
     await cache.delete(cacheKey(context, kind, handle));
   } catch {
     logWarningOnce(
+      context,
       `cache-delete-${kind}`,
       "[youtube-live] Internal cache delete failed.",
       { kind },
@@ -829,14 +859,17 @@ function activeLiveVideoId(videoIds, videos, channelId) {
   return null;
 }
 
-function logResult(source, result, details = {}) {
-  console.log("[youtube-live] Resolution result:", {
-    source,
-    live: result.live,
-    videoId: result.videoId || null,
-    retryAfterMs: result.retryAfterMs || null,
-    ...details,
-  });
+function logResult(context, source, result, details = {}) {
+  console.log(
+    "[youtube-live] Resolution result:",
+    diagnosticDetails(context, {
+      source,
+      live: result.live,
+      videoId: result.videoId || null,
+      retryAfterMs: result.retryAfterMs || null,
+      ...details,
+    }),
+  );
 }
 
 async function resetOfflineState(context, handle) {
@@ -908,12 +941,12 @@ async function resolveFromUploads(
 
   if (videoId) {
     const result = await storeLiveResult(context, handle, videoId);
-    logResult(source, result, { uploadsChecked: videoIds.length });
+    logResult(context, source, result, { uploadsChecked: videoIds.length });
     return result;
   }
 
   const result = await storeOfflineResult(context, handle);
-  logResult(source, result, { uploadsChecked: videoIds.length });
+  logResult(context, source, result, { uploadsChecked: videoIds.length });
   return result;
 }
 
@@ -953,7 +986,7 @@ async function resolveLiveVideo(context, handle, apiKey) {
 
   if (!channel) {
     const result = await storeOfflineResult(context, handle);
-    logResult("channel-not-found", result);
+    logResult(context, "channel-not-found", result);
     return result;
   }
 
@@ -969,7 +1002,7 @@ async function resolveLiveVideo(context, handle, apiKey) {
 
     if (verifiedVideoId) {
       const result = await storeLiveResult(context, handle, verifiedVideoId);
-      logResult("known-live-cache", result);
+      logResult(context, "known-live-cache", result);
       return result;
     }
 
@@ -1084,6 +1117,7 @@ async function resolveLiveVideo(context, handle, apiKey) {
         });
 
     logWarningOnce(
+      context,
       `search-${cooldown.code}-${cooldown.reason || "unknown"}`,
       quotaExceeded
         ? "[youtube-live] search.list quota exhausted; using uploads fallback."
@@ -1113,7 +1147,7 @@ async function resolveLiveVideo(context, handle, apiKey) {
 
   if (searchVideoId) {
     const result = await storeLiveResult(context, handle, searchVideoId);
-    logResult("search-list", result, {
+    logResult(context, "search-list", result, {
       searchCandidatesChecked: searchVideoIds.length,
     });
     return result;
@@ -1169,6 +1203,7 @@ async function resolveWithFailureHandling(context, handle, apiKey) {
     });
 
     logWarningOnce(
+      context,
       `general-${cooldown.code}-${cooldown.stage}-${cooldown.reason || "unknown"}`,
       "[youtube-live] Discovery cooldown established.",
       {
