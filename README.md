@@ -210,7 +210,7 @@ Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showin
 | ----------------- | ---------------------- | ----------------------------------- |
 | `seventv_paints`  | `seventv_paints=true`  | Enable 7TV name paints              |
 | `GIFs`           | `GIFs=true`            | Display native Twitch chat GIFs (off by default) |
-| `emote_shadow`    | `emote_shadow=true`    | Add shadows to emotes, rendered emoji, and cheers |
+| `emote_shadow`    | `emote_shadow=true`    | Add shadows to emotes, rendered emoji, cheers, and Twitch GIFs |
 | `platform_badges` | `platform_badges=true`  | Show Twitch, Kick, and YouTube platform badges (default when omitted) |
 | `platform_badges` | `platform_badges=false` | Hide platform badges only; other badges are unchanged |
 | `platform_badges` | `platform_badges=only`  | Show platform logos while hiding all other badges |

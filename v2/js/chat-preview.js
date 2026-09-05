@@ -9,6 +9,7 @@
   var previewMessageBags = {};
   var previewGeneration = 0;
   var previewGifPending = false;
+  var previewSevenTvPaintPending = false;
 
   function resetPreviewMessageBags() {
     previewMessageBags = {};
@@ -167,6 +168,14 @@
         if (gifSample) return gifSample;
       }
 
+      if (previewSevenTvPaintPending) {
+        previewSevenTvPaintPending = false;
+        var paintSample = Chat.previewMessages.find(function (item) {
+          return item.previewSevenTvPaint && Chat.shouldShowPreviewMessage(item);
+        });
+        if (paintSample) return paintSample;
+      }
+
       var platformPools = {};
       var platformMessageKeys = {};
 
@@ -301,6 +310,23 @@
       info.platform = "twitch";
       info.previewFfzUserBadge = !!item.ffzUserBadge;
 
+      if (Chat.info.preview && item.previewSevenTvPaint) {
+        // Local preview fixture, converted and applied by the production paint path.
+        Chat.info.seventvPaintCache[info["user-id"]] = Chat.extractSevenTvPaint({
+          id: "jchat-preview-paint",
+          name: "7TV Name Paint (preview)",
+          function: "LINEAR_GRADIENT",
+          angle: 90,
+          stops: [
+            { at: 0, color: 0xff77cc },
+            { at: 0.5, color: 0xffdd66 },
+            { at: 1, color: 0x66ddff },
+          ],
+        });
+        // The numeric fixture ID must not trigger a separate 7TV badge lookup.
+        Chat.info.seventvBadgeCache[info["user-id"]] = null;
+      }
+
       function writeTwitchPreviewMessage() {
         Chat.write(item.nick, info, item.message);
 
@@ -355,6 +381,8 @@
       Chat.info.previewIndex = 0;
       Chat.info.previewLastMessageKey = null;
       previewGifPending = Chat.info.showGifs;
+      previewSevenTvPaintPending =
+        Chat.info.seventvNamePaints && !Chat.info.nicknameColor;
 
       window.clearTimeout(Chat.info.previewSeedTimer);
       window.clearTimeout(Chat.info.previewTimer);

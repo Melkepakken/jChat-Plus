@@ -146,7 +146,8 @@
             processSevenTvChannelEmotes(res.emote_set.emotes);
           }
         })
-        .fail(function () {
+        .fail(function (xhr) {
+          if (xhr && xhr.status === 404) return;
           console.warn("jChat: Failed to load 7TV channel emotes.");
         });
     },

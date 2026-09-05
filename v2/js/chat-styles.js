@@ -137,7 +137,8 @@
           "#chat_container .emote,\n" +
             "#chat_container .cheer_emote,\n" +
             "#chat_container .cheer_bits,\n" +
-            "#chat_container .emoji {\n" +
+            "#chat_container .emoji,\n" +
+            "#chat_container .chat_gif_image {\n" +
             "  filter:\n" +
             "    drop-shadow(2px 2px 4px rgba(0, 0, 0, 1))\n" +
             "    drop-shadow(-2px -2px 4px rgba(0, 0, 0, 1));\n" +

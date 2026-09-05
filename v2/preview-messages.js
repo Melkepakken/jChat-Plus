@@ -8,6 +8,7 @@
       bot: !!options.bot,
       command: !!options.command,
       ffzUserBadge: !!options.ffzUserBadge,
+      previewSevenTvPaint: !!options.previewSevenTvPaint,
       info: {
         badges: badges || "",
         color: color,
@@ -114,6 +115,7 @@
       "#ffcc00",
       "vip/1,subscriber/6",
       "This already looks way more like real chat, thank god.",
+      { previewSevenTvPaint: true, userId: "9000000000000001" },
     ),
     twitch(
       "Tobba",
