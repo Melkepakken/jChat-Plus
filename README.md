@@ -63,6 +63,8 @@ jChat+ can find a public live broadcast from a YouTube handle or channel URL. Yo
 
 Automatic handle discovery backs off while a channel remains offline, from about one minute to several minutes between checks. A new public broadcast may therefore take a few minutes to appear, and can take longer when YouTube discovery or search is unavailable or quota-limited. This does not slow polling after Live Chat is connected. A direct-only `youtube_video` configuration bypasses Data API discovery. With a fallback `youtube` handle, repeated generic direct-chat failures may trigger a quota-safe check for a different current public live stream; an offline handle does not abandon the direct video. If a daily discovery quota is exhausted, affected calls pause until the next Pacific-time reset and retry automatically.
 
+If automatic discovery reports a channel unavailable, jChat+ stops checking that handle until the overlay is reloaded; direct-video retries continue independently.
+
 Supported YouTube features include:
 
 * Explicit Live Chat, with no silent fallback to Top Chat

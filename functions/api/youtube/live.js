@@ -1,5 +1,5 @@
 const YOUTUBE_API_ROOT = "https://www.googleapis.com/youtube/v3/";
-const YOUTUBE_RESOLVER_VERSION = "2";
+const YOUTUBE_RESOLVER_VERSION = "3";
 const YOUTUBE_API_TIMEOUT_MS = 15000;
 const MAX_UPLOADS = 50;
 const CACHE_VERSION = "v1";
@@ -11,6 +11,7 @@ const PACIFIC_RESET_BUFFER_MS = 60 * 1000;
 const MAX_MEMORY_CACHE_ENTRIES = 256;
 const CACHE_TTL = {
   channel: 3 * 24 * 60 * 60,
+  unavailable: 60 * 60,
   knownLive: 24 * 60 * 60,
   liveResult: 60,
   offlineState: 7 * 24 * 60 * 60,
@@ -91,6 +92,16 @@ function configurationError(stage = "configuration", reason = null) {
   error.name = "YouTubeConfigurationError";
   error.stage = stage;
   error.status = null;
+  error.reason = reason;
+  return error;
+}
+
+function channelUnavailableError(stage, reason) {
+  const error = new Error(
+    "This YouTube channel is not available for automatic discovery.",
+  );
+  error.name = "YouTubeChannelUnavailableError";
+  error.stage = stage;
   error.reason = reason;
   return error;
 }
@@ -666,6 +677,10 @@ async function establishGeneralCooldown(context, cooldown) {
 }
 
 function cooldownMessage(code) {
+  if (code === "youtube_channel_unavailable") {
+    return "This YouTube channel is not available for automatic discovery.";
+  }
+
   if (code === "youtube_quota_exceeded") {
     return "YouTube discovery is paused because its API quota is exhausted.";
   }
@@ -689,7 +704,9 @@ function throwCooldown(cooldown) {
 function cachedChannel(value) {
   if (
     typeof value?.channelId !== "string" ||
-    typeof value?.uploadsPlaylistId !== "string"
+    !value.channelId.trim() ||
+    typeof value?.uploadsPlaylistId !== "string" ||
+    !value.uploadsPlaylistId.trim()
   ) {
     return null;
   }
@@ -700,44 +717,71 @@ function cachedChannel(value) {
   };
 }
 
-async function resolveChannel(context, handle, apiKey) {
-  const cached = cachedChannel(await readCache(context, "channel", handle));
+async function resolveChannel(context, handle, apiKey, forceRefresh = false) {
+  if (forceRefresh) {
+    await deleteCache(context, "channel", handle);
+  } else {
+    const cached = cachedChannel(await readCache(context, "channel", handle));
 
-  if (cached) {
-    return cached;
+    if (cached) {
+      return cached;
+    }
   }
 
-  const items = responseItems(
-    await fetchApi(
-      "channels",
-      {
-        part: "contentDetails",
-        forHandle: handle,
-        maxResults: "1",
-        fields: "items(id,contentDetails/relatedPlaylists/uploads)",
-      },
-      apiKey,
-      "channels.list",
-    ),
+  const data = await fetchApi(
+    "channels",
+    {
+      part: "contentDetails",
+      forHandle: handle,
+      maxResults: "1",
+      fields:
+        "items(id,contentDetails/relatedPlaylists/uploads),pageInfo(totalResults)",
+    },
+    apiKey,
     "channels.list",
   );
+  const items = responseItems(data, "channels.list");
 
-  if (!items.length) {
-    return null;
-  }
-
-  const item = items[0] || {};
-  const channel = {
-    channelId: item.id,
-    uploadsPlaylistId: item.contentDetails?.relatedPlaylists?.uploads,
-  };
-
+  // Empty filtered responses need explicit evidence of no matching channel.
   if (
-    typeof channel.channelId !== "string" ||
-    typeof channel.uploadsPlaylistId !== "string"
+    !Object.prototype.hasOwnProperty.call(data, "items") &&
+    data.pageInfo?.totalResults !== 0
   ) {
     throw apiError("channels.list-shape", 200);
   }
+
+  if (!items.length) {
+    throw channelUnavailableError("channels.list", "channelNotFound");
+  }
+
+  const item = items[0];
+  const details = item?.contentDetails;
+  const playlists = details?.relatedPlaylists;
+  const uploads = playlists?.uploads;
+
+  if (
+    !item ||
+    typeof item !== "object" ||
+    Array.isArray(item) ||
+    typeof item.id !== "string" ||
+    !item.id.trim() ||
+    (details !== undefined &&
+      (!details || typeof details !== "object" || Array.isArray(details))) ||
+    (playlists !== undefined &&
+      (!playlists || typeof playlists !== "object" || Array.isArray(playlists))) ||
+    (uploads !== undefined && typeof uploads !== "string")
+  ) {
+    throw apiError("channels.list-shape", 200);
+  }
+
+  if (!uploads?.trim()) {
+    throw channelUnavailableError("channels.list", "uploadsPlaylistMissing");
+  }
+
+  const channel = {
+    channelId: item.id,
+    uploadsPlaylistId: uploads,
+  };
 
   await writeCache(context, "channel", handle, channel, CACHE_TTL.channel);
   return channel;
@@ -763,6 +807,14 @@ async function latestUploadIds(uploadsPlaylistId, apiKey) {
     items,
     (item) => item?.contentDetails?.videoId,
     "playlistItems.list",
+  );
+}
+
+function isMissingUploadsPlaylist(error) {
+  return (
+    error?.stage === "playlistItems.list" &&
+    error.status === 404 &&
+    error.reason === "playlistNotFound"
   );
 }
 
@@ -932,7 +984,29 @@ async function resolveFromUploads(
   channel,
   source = "uploads-playlist",
 ) {
-  const videoIds = await latestUploadIds(channel.uploadsPlaylistId, apiKey);
+  let videoIds;
+
+  try {
+    videoIds = await latestUploadIds(channel.uploadsPlaylistId, apiKey);
+  } catch (error) {
+    if (!isMissingUploadsPlaylist(error)) {
+      throw error;
+    }
+
+    // Bypass even a stale shared cache whose delete failed; refresh only once.
+    channel = await resolveChannel(context, handle, apiKey, true);
+
+    try {
+      videoIds = await latestUploadIds(channel.uploadsPlaylistId, apiKey);
+    } catch (freshError) {
+      if (isMissingUploadsPlaylist(freshError)) {
+        throw channelUnavailableError("playlistItems.list", "playlistNotFound");
+      }
+
+      throw freshError;
+    }
+  }
+
   const videoId = activeLiveVideoId(
     videoIds,
     await videosById(videoIds, apiKey),
@@ -951,6 +1025,14 @@ async function resolveFromUploads(
 }
 
 async function resolveLiveVideo(context, handle, apiKey) {
+  const unavailable = cachedCooldown(
+    await readCache(context, "unavailable", handle),
+  );
+
+  if (unavailable?.code === "youtube_channel_unavailable") {
+    throwCooldown(unavailable);
+  }
+
   const now = Date.now();
   const cached = cachedResolution(
     await readCache(context, "result", handle),
@@ -983,12 +1065,6 @@ async function resolveLiveVideo(context, handle, apiKey) {
   }
 
   const channel = await resolveChannel(context, handle, apiKey);
-
-  if (!channel) {
-    const result = await storeOfflineResult(context, handle);
-    logResult(context, "channel-not-found", result);
-    return result;
-  }
 
   const knownLive = await readCache(context, "known-live", handle);
   const knownVideoId = isVideoId(knownLive?.videoId) ? knownLive.videoId : null;
@@ -1177,6 +1253,36 @@ async function resolveWithFailureHandling(context, handle, apiKey) {
       throw error;
     }
 
+    if (error?.name === "YouTubeChannelUnavailableError") {
+      const unavailable = {
+        code: "youtube_channel_unavailable",
+        reason: safeLogToken(error.reason),
+        retryAt: Date.now() + CACHE_TTL.unavailable * 1000,
+        stage: safeLogToken(error.stage) || "unknown",
+      };
+
+      await writeCache(
+        context,
+        "unavailable",
+        handle,
+        unavailable,
+        CACHE_TTL.unavailable,
+      );
+      await Promise.all(
+        ["result", "offlineState", "known-live", "channel", "searchMiss"].map(
+          (kind) => deleteCache(context, kind, handle),
+        ),
+      );
+      console.warn(
+        "[youtube-live] Channel unavailable",
+        diagnosticDetails(context, {
+          reason: unavailable.reason,
+          stage: unavailable.stage,
+        }),
+      );
+      throwCooldown(unavailable);
+    }
+
     const stage = safeLogToken(error?.stage) || "unknown";
     const status = Number.isInteger(error?.status) ? error.status : null;
     const reason = safeLogToken(error?.reason);
@@ -1256,7 +1362,7 @@ export async function onRequestGet(context) {
 
     return jsonResponse(
       { code, error: message, retryAfterMs },
-      503,
+      code === "youtube_channel_unavailable" ? 410 : 503,
       retryAfterMs,
     );
   } finally {
