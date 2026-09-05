@@ -5,6 +5,16 @@
   var YOUTUBE_MAX_TIMER_DELAY_MS = 2147483647;
   var YOUTUBE_DISCOVERY_FAILURE_DELAYS = [15000, 30000, 60000, 120000, 300000];
   var YOUTUBE_BOOTSTRAP_RETRY_DELAYS = [5000, 15000];
+  var YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS = [
+    5000,
+    15000,
+    30000,
+    60000,
+    120000,
+    300000,
+  ];
+  var YOUTUBE_DIRECT_PROBE_FAILURE_DELAYS = [60000, 120000, 300000];
+  var YOUTUBE_DIRECT_SAME_VIDEO_PROBE_DELAY_MS = 300000;
 
   function validRetryDelay(value) {
     return typeof value === "number" &&
@@ -60,8 +70,8 @@
     });
   }
 
-  function requestJson(url, options) {
-    var controller = new AbortController();
+  function requestJson(url, options, requestController) {
+    var controller = requestController || new AbortController();
     var requestHeaders = Object.assign(
       {},
       (options && options.headers) || {},
@@ -367,6 +377,36 @@
     return serverDelay === null ? fallbackDelay : serverDelay;
   }
 
+  function nextDirectProbeFailureDelay(error) {
+    var failureIndex = Math.min(
+      Chat.info.youtubeDirectProbeFailureCount,
+      YOUTUBE_DIRECT_PROBE_FAILURE_DELAYS.length - 1,
+    );
+    var fallbackDelay = YOUTUBE_DIRECT_PROBE_FAILURE_DELAYS[failureIndex];
+    var serverDelay = responseRetryDelay(
+      error && error.retryAfterMs,
+      error && error.retryAfter,
+    );
+
+    Chat.info.youtubeDirectProbeFailureCount = Math.min(
+      Chat.info.youtubeDirectProbeFailureCount + 1,
+      YOUTUBE_DIRECT_PROBE_FAILURE_DELAYS.length,
+    );
+
+    return serverDelay === null ? fallbackDelay : serverDelay;
+  }
+
+  function isCurrentDirectRecovery(recoveryGeneration, videoId, handle) {
+    return (
+      recoveryGeneration === Chat.info.youtubeDirectRecoveryGeneration &&
+      !Chat.info.preview &&
+      Chat.info.youtubeDirectVideoPending &&
+      Chat.info.youtubeDirectVideoId === videoId &&
+      Chat.info.youtubeActiveSource === "video" &&
+      getConfiguredYouTubeHandle() === handle
+    );
+  }
+
   var youtubeOptionProvided = "youtube" in $.QueryString;
   var youtubeOption = youtubeOptionProvided
     ? String($.QueryString.youtube || "").trim()
@@ -402,6 +442,11 @@
     youtubePollFailureCount: 0,
     youtubeDiscoveryFailureCount: 0,
     youtubeBootstrapFailureCount: 0,
+    youtubeDirectProbeAllowedAt: 0,
+    youtubeDirectProbeFailureCount: 0,
+    youtubeDirectProbeInFlight: false,
+    youtubeDirectProbeController: null,
+    youtubeDirectRecoveryGeneration: 0,
     youtubeReconnectDelay: 5000,
     youtubeDiscoveryDelay: 30000,
     youtubeDebug: youtubeDebug,
@@ -706,6 +751,7 @@
         (!directVideoId && !handle) ||
         Chat.info.preview ||
         Chat.info.youtubeResolving ||
+        Chat.info.youtubeDirectProbeInFlight ||
         Chat.info.youtubeSession
       ) {
         return;
@@ -810,7 +856,7 @@
 
       if (
         !normalizedVideoId ||
-        source !== "handle" ||
+        (source !== "handle" && source !== "video") ||
         Chat.info.preview
       ) {
         return;
@@ -828,7 +874,10 @@
         if (
           connectionGeneration !== Chat.info.youtubeConnectionGeneration ||
           Chat.info.preview ||
-          Chat.info.youtubeSession
+          Chat.info.youtubeSession ||
+          (source === "video" &&
+            (!Chat.info.youtubeDirectVideoPending ||
+              Chat.info.youtubeDirectVideoId !== normalizedVideoId))
         ) {
           return;
         }
@@ -837,19 +886,139 @@
       }, getPollDelay(delay));
     },
 
+    clearYouTubeDirectRecovery: function () {
+      if (Chat.info.youtubeDirectProbeController) {
+        Chat.info.youtubeDirectProbeController.abort();
+      }
+
+      Chat.info.youtubeDirectProbeAllowedAt = 0;
+      Chat.info.youtubeDirectProbeFailureCount = 0;
+      Chat.info.youtubeDirectProbeInFlight = false;
+      Chat.info.youtubeDirectProbeController = null;
+      Chat.info.youtubeDirectRecoveryGeneration++;
+    },
+
+    probeYouTubeFallback: function (videoId) {
+      var normalizedVideoId = getYouTubeVideoId(videoId);
+      var handle = getConfiguredYouTubeHandle();
+
+      if (
+        !normalizedVideoId ||
+        !handle ||
+        Chat.info.preview ||
+        !Chat.info.youtubeDirectVideoPending ||
+        Chat.info.youtubeDirectVideoId !== normalizedVideoId ||
+        Chat.info.youtubeDirectProbeInFlight ||
+        Date.now() < Chat.info.youtubeDirectProbeAllowedAt
+      ) {
+        return;
+      }
+
+      var recoveryGeneration = Chat.info.youtubeDirectRecoveryGeneration;
+      var probeController = new AbortController();
+      Chat.info.youtubeDirectProbeInFlight = true;
+      Chat.info.youtubeDirectProbeController = probeController;
+
+      console.log(
+        "jChat YouTube: Direct video failed repeatedly; checking fallback @" +
+          handle,
+      );
+
+      requestJson(
+        "/api/youtube/live?handle=" + encodeURIComponent(handle),
+        null,
+        probeController,
+      )
+        .then(function (liveData) {
+          if (
+            !isCurrentDirectRecovery(
+              recoveryGeneration,
+              normalizedVideoId,
+              handle,
+            )
+          ) {
+            return;
+          }
+
+          var discovery = validatedDiscoveryResponse(liveData);
+          Chat.info.youtubeDirectProbeInFlight = false;
+          Chat.info.youtubeDirectProbeController = null;
+
+          if (discovery.live && discovery.videoId !== normalizedVideoId) {
+            console.log(
+              "jChat YouTube: Fallback handle found a different live video; switching",
+            );
+
+            Chat.info.youtubeDirectVideoPending = false;
+            Chat.clearYouTubeDirectRecovery();
+            Chat.bootstrapYouTubeChat(discovery.videoId, "handle");
+            return;
+          }
+
+          Chat.info.youtubeDirectProbeFailureCount = 0;
+
+          if (discovery.live) {
+            Chat.info.youtubeDirectProbeAllowedAt =
+              Date.now() + YOUTUBE_DIRECT_SAME_VIDEO_PROBE_DELAY_MS;
+
+            console.log(
+              "jChat YouTube: Fallback handle points to the same video; keeping direct video",
+            );
+            return;
+          }
+
+          var retryDelay = discovery.retryAfterMs;
+
+          if (retryDelay === null) {
+            retryDelay = nextDirectProbeFailureDelay(null);
+          }
+
+          Chat.info.youtubeDirectProbeAllowedAt = Date.now() + retryDelay;
+
+          console.log(
+            "jChat YouTube: Fallback handle is offline; keeping direct video",
+          );
+        })
+        .catch(function (err) {
+          if (
+            !isCurrentDirectRecovery(
+              recoveryGeneration,
+              normalizedVideoId,
+              handle,
+            )
+          ) {
+            return;
+          }
+
+          Chat.info.youtubeDirectProbeInFlight = false;
+          Chat.info.youtubeDirectProbeController = null;
+          var retryDelay = nextDirectProbeFailureDelay(err);
+          Chat.info.youtubeDirectProbeAllowedAt = Date.now() + retryDelay;
+
+          console.warn(
+            "jChat YouTube: Fallback handle lookup failed; keeping direct video",
+            err,
+          );
+        });
+    },
+
     bootstrapYouTubeChat: function (videoId, source, retryAttempt) {
       var bootstrapAttempt =
         Number.isInteger(retryAttempt) && retryAttempt >= 0
           ? retryAttempt
           : 0;
+      var activeSource =
+        source || Chat.info.youtubeActiveSource || "video";
+      var preserveDirectRecovery =
+        activeSource === "video" &&
+        Chat.info.youtubeDirectVideoPending &&
+        Chat.info.youtubeDirectVideoId === getYouTubeVideoId(videoId);
 
-      Chat.resetYouTubeConnection();
+      Chat.resetYouTubeConnection(preserveDirectRecovery);
       Chat.info.youtubeVideoId = videoId;
       Chat.info.youtubeBootstrapFailureCount = bootstrapAttempt;
       var connectionGeneration = Chat.info.youtubeConnectionGeneration;
 
-      var activeSource =
-        source || Chat.info.youtubeActiveSource || "video";
       Chat.info.youtubeActiveSource = activeSource;
 
       return requestJson(
@@ -910,6 +1079,10 @@
           Chat.info.youtubeBootstrapFailureCount = 0;
           Chat.info.youtubeConnectionLost = false;
 
+          if (activeSource === "video") {
+            Chat.clearYouTubeDirectRecovery();
+          }
+
           console.log(
             "jChat YouTube: Connected to " +
               chatData.feed +
@@ -928,6 +1101,39 @@
 
           if (err && err.code === "youtube_chat_ended") {
             Chat.handleYouTubeChatEnded();
+            return;
+          }
+
+          if (activeSource === "video" && preserveDirectRecovery) {
+            var directFailureIndex = Math.min(
+              bootstrapAttempt,
+              YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS.length - 1,
+            );
+            var nextAttempt = Math.min(
+              bootstrapAttempt + 1,
+              YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS.length,
+            );
+            var retryDelay =
+              YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS[directFailureIndex];
+
+            console.warn(
+              "jChat YouTube: Direct chat bootstrap failed; retrying same video",
+              err,
+            );
+
+            Chat.resetYouTubeConnection(true);
+            Chat.info.youtubeBootstrapFailureCount = nextAttempt;
+            Chat.scheduleYouTubeBootstrap(
+              videoId,
+              activeSource,
+              nextAttempt,
+              retryDelay,
+            );
+
+            if (nextAttempt >= 3) {
+              Chat.probeYouTubeFallback(videoId);
+            }
+
             return;
           }
 
@@ -1273,7 +1479,7 @@
       Chat.info.youtubePendingDeliveries = [];
     },
 
-    resetYouTubeConnection: function () {
+    resetYouTubeConnection: function (preserveDirectRecovery) {
       Chat.info.youtubeConnectionGeneration++;
 
       if (Chat.info.youtubeResolveTimer) {
@@ -1295,6 +1501,10 @@
       Chat.info.youtubeContinuation = null;
       Chat.info.youtubeVideoId = null;
       Chat.clearYouTubeDeliveries();
+
+      if (!preserveDirectRecovery) {
+        Chat.clearYouTubeDirectRecovery();
+      }
     },
 
     stopYouTubePolling: function () {
@@ -1319,9 +1529,6 @@
       }
 
       Chat.info.youtubeActiveSource = null;
-      Chat.info.youtubeDirectVideoPending = Boolean(
-        Chat.info.youtubeDirectVideoId,
-      );
     },
   });
 })();
