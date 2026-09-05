@@ -50,6 +50,7 @@
 
   <script src="jquery.min.js"></script>
   <script src="utils.js" defer></script>
+  <script src="platform-settings.js" defer></script>
   <script src="script.js" defer></script>
   <script src="site-updates.js" defer></script>
 </head>
@@ -98,8 +99,42 @@
             <span>Build your overlay URL</span>
           </div>
 
-          <div class="form_row full">
-            <input type="text" name="channel" required placeholder="Twitch channel" />
+          <div class="settings_group">
+            <h4>Twitch</h4>
+
+            <div class="form_row toggle_row">
+              <label for="twitch_enabled">Enable Twitch</label>
+              <input type="checkbox" id="twitch_enabled" name="twitch_enabled" checked />
+            </div>
+
+            <div id="twitch_controls">
+              <div class="kick_channel_block">
+                <label for="channel">Twitch channel</label>
+                <div class="kick_channel_control">
+                  <input type="text" id="channel" name="channel" placeholder="Twitch channel" />
+                </div>
+              </div>
+
+              <div class="form_row toggle_row">
+                <label for="show_gifs">Show GIFs</label>
+                <input type="checkbox" id="show_gifs" name="show_gifs" />
+              </div>
+
+              <div class="form_row toggle_row">
+                <label for="seventv_paints">7TV name paints</label>
+                <input type="checkbox" id="seventv_paints" name="seventv_paints" />
+              </div>
+
+              <div id="advanced_ffz_room_row" class="form_row toggle_row hidden">
+                <label for="ffz_room_badges">FFZ room badges</label>
+                <input type="checkbox" id="ffz_room_badges" name="ffz_room_badges" />
+              </div>
+
+              <div id="advanced_ffz_user_row" class="form_row toggle_row hidden">
+                <label for="ffz_user_badges">FFZ user badges</label>
+                <input type="checkbox" id="ffz_user_badges" name="ffz_user_badges" />
+              </div>
+            </div>
           </div>
 
           <div class="settings_group">
@@ -115,7 +150,7 @@
 
               <div class="kick_channel_control">
                 <input type="text" id="kick_channel" name="kick_channel" placeholder="Kick channel" />
-                <span class="help_text">Blank = same as Twitch channel</span>
+                <span id="kick_channel_help" class="help_text">Enter a Kick channel</span>
               </div>
             </div>
           </div>
@@ -134,7 +169,7 @@
               <div class="kick_channel_control">
                 <input type="text" id="youtube_channel" name="youtube_channel"
                   placeholder="YouTube handle" />
-                <span class="help_text">Blank = same as Kick or Twitch</span>
+                <span id="youtube_channel_help" class="help_text">Enter a handle or live video</span>
               </div>
             </div>
 
@@ -189,11 +224,6 @@
                 <option value="twemoji">Twemoji</option>
                 <option value="native">Native</option>
               </select>
-            </div>
-
-            <div class="form_row toggle_row">
-              <label for="seventv_paints">7TV name paints</label>
-              <input type="checkbox" id="seventv_paints" name="seventv_paints" />
             </div>
 
             <div class="form_row">
@@ -303,19 +333,10 @@
               <label for="block">Block users</label>
               <input type="text" id="block" name="block" placeholder="user1,user2" />
             </div>
-
-            <div id="advanced_ffz_room_row" class="form_row toggle_row hidden">
-              <label for="ffz_room_badges">FFZ room badges</label>
-              <input type="checkbox" id="ffz_room_badges" name="ffz_room_badges" />
-            </div>
-
-            <div id="advanced_ffz_user_row" class="form_row toggle_row hidden">
-              <label for="ffz_user_badges">FFZ user badges</label>
-              <input type="checkbox" id="ffz_user_badges" name="ffz_user_badges" />
-            </div>
           </div>
 
           <div class="generate_panel">
+            <p id="form_error" class="hidden" role="alert"></p>
             <input type="submit" id="generate_url" value="Generate URL" />
 
             <div id="result" class="hidden">
@@ -338,9 +359,11 @@
             </div>
           </div>
 
+          <p id="preview_empty" class="help_text hidden" role="status">Enable a platform to preview chat.</p>
+
           <div id="preview_container">
             <iframe id="overlay_preview" title="jChat+ overlay preview"
-              src="v2/?preview=true&channel=Twitch&size=2&kick=Kick" loading="eager"></iframe>
+              src="v2/?preview=true&amp;twitch=true&amp;kick=true&amp;youtube=false&amp;size=2" loading="eager"></iframe>
           </div>
         </div>
       </div>

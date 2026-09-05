@@ -1,4 +1,5 @@
 window.parseIRC = function(data) {
+    if (typeof data !== 'string' || !data) return null
     var message = {
         raw: data,
         tags: {},
@@ -29,8 +30,10 @@ window.parseIRC = function(data) {
             // Tags delimited by an equals sign are key=value tags.
             // If there's no equals, we assign the tag a value of true.
             var tag = rawTags[i]
-            var pair = tag.split('=')
-            message.tags[pair[0]] = pair[1] || true
+            var separator = tag.indexOf('=')
+            var key = separator === -1 ? tag : tag.slice(0, separator)
+            var value = separator === -1 ? '' : tag.slice(separator + 1)
+            message.tags[key] = value || true
         }
 
         position = nextspace + 1

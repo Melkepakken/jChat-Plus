@@ -6,6 +6,8 @@
 
 **jChat+** puts Twitch, Kick, and YouTube chat into one browser-source overlay for your stream. Use the setup page to choose your channels and appearance, preview the result, and get a ready-to-use URL.
 
+Use any platform on its own or combine them. Twitch is optional.
+
 **[Open the hosted setup page](https://chat.melkepakken.tv/)**
 
 ```txt
@@ -27,6 +29,7 @@ That's it. You do not need to set up Cloudflare or edit query parameters for nor
 ## Features
 
 * Twitch + Kick + YouTube chat support in one overlay
+* Independent platform controls and optional native Twitch chat GIFs
 * BTTV, FFZ, and 7TV emotes
 * 7TV name paints, user badges, and cosmetics
 * Twitch, Kick, and YouTube platform badges, shown by default
@@ -44,6 +47,8 @@ That's it. You do not need to set up Cloudflare or edit query parameters for nor
 ### Twitch
 
 jChat+ supports Twitch chat, Twitch badges and cheermotes, custom channel badges, and BTTV, FFZ, and 7TV emotes. It also supports 7TV paints and user cosmetics, plus `!reloadchat` from Twitch moderators.
+
+**Show GIFs** displays native Twitch chat GIFs inside their message, with a maximum area of about 240 × 160 pixels. It is off by default. When it is off, or a GIF cannot load, the original caption stays visible. Animated emotes and 7TV animations are unaffected. This option only changes your overlay; it does not change Twitch channel settings or who can send GIFs. The current 7TV name-paint integration uses Twitch identities.
 
 ### Kick
 
@@ -87,58 +92,44 @@ This section is optional. The setup page generates these URLs for you, but you c
 
 ### Overlay URL examples
 
-#### Twitch only
+Append one of these examples to `https://chat.melkepakken.tv/v2/`:
+
+| Platforms | Query |
+| --- | --- |
+| Twitch | `?channel=creator` |
+| Kick | `?twitch=false&kick=creator` |
+| YouTube | `?twitch=false&youtube=CreatorTV` |
+| Twitch + Kick | `?channel=creator&kick=creator` |
+| Twitch + YouTube | `?channel=creator&youtube=CreatorTV` |
+| Kick + YouTube | `?twitch=false&kick=creator&youtube=CreatorTV` |
+| Twitch + Kick + YouTube | `?channel=creator&kick=creator&youtube=CreatorTV` |
+
+Existing `channel=creator` URLs still enable Twitch. `twitch=false` overrides that channel, ignoring case. With no channel, Twitch stays off; standalone Kick and YouTube URLs also work without `twitch=false`. No usable sources leaves an empty overlay.
+
+Legacy `kick=true` still reuses the configured Twitch name, even with `twitch=false`. Its aliases are `1`, `yes`, `same`, `channel`, and `twitch`; `kick_channel` remains an alternative to `kick`, and `kick_room` remains a room override. Legacy `youtube=true` (also `1`, `yes`, `same`, `channel`, or `kick`) prefers a specific configured Kick name, otherwise the configured Twitch name. `false`, `0`, `no`, `off`, and `disabled` are never used as source names; `youtube=false` also disables a supplied video.
+
+The setup page resolves blank Kick fields from enabled Twitch, and blank YouTube fields from enabled Kick or Twitch. Disabled fields are excluded. A YouTube video with a blank handle stays direct-only.
+
+For a real name that matches a same-channel alias, use an explicit form such as `kick=@twitch` or `youtube=@kick`. The generator adds `@` when needed.
+
+#### Direct YouTube video only
 
 ```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel
+https://chat.melkepakken.tv/v2/?twitch=false&youtube_video=VIDEO_ID
 ```
 
-#### Twitch + Kick with the same channel name
-
-```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick=true
-```
-
-#### Twitch + a specific Kick channel
-
-```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick=yourkickchannel
-```
-
-#### Twitch + YouTube using the effective same channel
-
-```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&youtube=true
-```
-
-#### Twitch + an explicit YouTube handle
-
-```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&youtube=youryoutubehandle
-```
-
-#### Twitch + an unlisted YouTube stream
-
-```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&youtube_video=VIDEO_ID
-```
-
-#### Twitch + Kick + YouTube
-
-```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick=true&youtube=true
-```
+Replace `VIDEO_ID` with the actual video ID or a YouTube video URL. This mode does not perform handle discovery.
 
 #### Direct YouTube video with a fallback handle
 
 ```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&youtube=youryoutubehandle&youtube_video=VIDEO_ID
+https://chat.melkepakken.tv/v2/?twitch=false&youtube=CreatorTV&youtube_video=VIDEO_ID
 ```
 
 #### Manual Kick room ID fallback
 
 ```txt
-https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick_room=3180237
+https://chat.melkepakken.tv/v2/?twitch=false&kick_room=3180237
 ```
 
 #### Preview mode
@@ -146,18 +137,10 @@ https://chat.melkepakken.tv/v2/?channel=yourtwitchchannel&kick_room=3180237
 Preview mode can be used to test the overlay without relying on live chat messages.
 
 ```txt
-https://chat.melkepakken.tv/v2/?preview=true&channel=twitch&kick=kick&youtube=true&size=3&font=0&shadow=2&animate=true
+https://chat.melkepakken.tv/v2/?preview=true&twitch=true&kick=true&youtube=true&size=3&font=0&shadow=2&animate=true
 ```
 
-The neutral preview values are intentionally:
-
-```txt
-channel=twitch
-kick=kick
-youtube=true
-```
-
-This rotates simulated Twitch, Kick, and YouTube messages without connecting to a real YouTube stream.
+Preview uses simulated messages from only the selected platforms. It needs no channel names, opens no live chat connections, and performs no YouTube discovery. Add `GIFs=true` to preview a native Twitch GIF promptly.
 
 #### Example OBS URL
 
@@ -180,6 +163,7 @@ Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showin
 | Parameter      | Example               | Description                                           |
 | -------------- | --------------------- | ----------------------------------------------------- |
 | `channel`      | `channel=melkepakken` | Twitch channel                                        |
+| `twitch`       | `twitch=false`       | Disable Twitch, even when `channel` is supplied |
 | `kick`         | `kick=true`           | Resolve Kick channel using the same name as `channel` |
 | `kick`         | `kick=velcuz`         | Resolve a specific Kick channel                       |
 | `kick_channel` | `kick_channel=velcuz` | Alternative Kick channel parameter                    |
@@ -225,6 +209,7 @@ Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showin
 | Parameter         | Example                | Description                         |
 | ----------------- | ---------------------- | ----------------------------------- |
 | `seventv_paints`  | `seventv_paints=true`  | Enable 7TV name paints              |
+| `GIFs`           | `GIFs=true`            | Display native Twitch chat GIFs (off by default) |
 | `emote_shadow`    | `emote_shadow=true`    | Add shadows to emotes, rendered emoji, and cheers |
 | `platform_badges` | `platform_badges=true`  | Show Twitch, Kick, and YouTube platform badges (default when omitted) |
 | `platform_badges` | `platform_badges=false` | Hide platform badges only; other badges are unchanged |
@@ -233,6 +218,8 @@ Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showin
 | `ffz_user_badges` | `ffz_user_badges=true` | Enable FFZ user badges |
 
 `hide_badges=true` keeps its legacy behavior: it hides special/user badges while leaving normal Twitch/Kick badges and enabled platform badges visible. `hide_all_badges` overrides every badge setting, so no badges are shown even with `platform_badges=only`.
+
+GIFs require Twitch and the exact value `true`, ignoring case. The parameter name also accepts `gifs` and `GIFS`. Missing, empty, `1`, `yes`, `on`, `false`, or whitespace-padded values leave GIFs off. With duplicate GIF parameters, every value must be a valid `true`. Pasted links are ordinary text. This setting is independent of `animate` and does not disable animated emotes.
 
 ---
 
@@ -279,6 +266,8 @@ This does not introduce a build process. Wrangler is only the local Cloudflare P
 ### Twitch credentials
 
 The hosted version at `chat.melkepakken.tv` uses a Cloudflare proxy for Twitch Helix requests. For local or self-hosted use, you can use a local credentials file.
+
+Kick-only and YouTube-only overlays do not need Twitch credentials.
 
 Copy:
 

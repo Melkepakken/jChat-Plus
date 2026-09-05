@@ -5,6 +5,18 @@ window.JCHAT_UPDATES = [
   {
     type: "update",
     date: "2026-09-05",
+    title: "Choose your chat platforms",
+    summary: "Use Twitch, Kick or YouTube on its own, or combine any of them in one overlay.",
+  },
+  {
+    type: "update",
+    date: "2026-09-05",
+    title: "Optional Twitch GIFs",
+    summary: "Show native Twitch chat GIFs in your overlay with Show GIFs. Off by default.",
+  },
+  {
+    type: "update",
+    date: "2026-09-05",
     title: "YouTube reliability improvements",
     summary:
       "YouTube stream discovery, retries and old chat handling are now much more reliable.",

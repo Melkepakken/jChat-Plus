@@ -631,7 +631,7 @@
 
       userId = String(userId || "");
 
-      if (!/^\d+$/.test(userId) || (!includeBadge && !includePaint)) {
+      if (!Chat.isPlatformEnabled("twitch") || !/^\d+$/.test(userId) || (!includeBadge && !includePaint)) {
         request.reject({
           kind: "invalid",
         });
@@ -848,7 +848,7 @@
     },
 
     shouldLoadSevenTvNamePaint: function (userId) {
-      if (!Chat.info.seventvNamePaints || Chat.info.nicknameColor) {
+      if (!Chat.isPlatformEnabled("twitch") || !Chat.info.seventvNamePaints || Chat.info.nicknameColor) {
         return false;
       }
 
@@ -989,10 +989,11 @@
     },
 
     updateRenderedSevenTvCosmetics: function (userId, badge, paint) {
+      if (!Chat.isPlatformEnabled("twitch")) return 0;
       userId = String(userId || "");
 
       var $lines = $(".chat_line").filter(function () {
-        return $(this).attr("data-user-id") === userId;
+        return $(this).attr("data-platform") === "twitch" && $(this).attr("data-user-id") === userId;
       });
 
       $lines.each(function () {
@@ -1039,6 +1040,11 @@
         Chat.info.seventvBadgeQueue.length
       ) {
         var task = Chat.info.seventvBadgeQueue.shift();
+        if (!Chat.isPlatformEnabled("twitch") || task.generation !== Chat.info.startupGeneration) {
+          delete Chat.info.seventvBadgeRequests[task.userId];
+          task.request.resolve();
+          continue;
+        }
 
         Chat.info.seventvBadgeActiveRequests++;
 
@@ -1050,6 +1056,11 @@
 
             if (currentTask.includePaint) {
               Chat.info.seventvPaintCache[currentTask.userId] = paint || null;
+            }
+
+            if (!Chat.isPlatformEnabled("twitch") || currentTask.generation !== Chat.info.startupGeneration) {
+              currentTask.request.resolve();
+              return;
             }
 
             if (badge) {
@@ -1121,7 +1132,7 @@
     loadSevenTvUserBadge: function (nick, userId) {
       var resolved = $.Deferred().resolve().promise();
 
-      if (!nick || !userId) {
+      if (!Chat.isPlatformEnabled("twitch") || !nick || !userId) {
         return resolved;
       }
 
@@ -1195,6 +1206,7 @@
       }
 
       Chat.info.seventvBadgeQueue.push({
+        generation: Chat.info.startupGeneration,
         nick: nick,
         userId: userId,
         includeBadge: includeBadge,

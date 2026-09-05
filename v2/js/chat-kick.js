@@ -173,7 +173,7 @@
       var isBroadcaster =
         badges.some(function (badge) {
           return Chat.getKickBadgeType(badge) === "broadcaster";
-        }) || nick === Chat.info.channel;
+        }) || nick === Chat.info.kickChannel;
 
       if (content.toLowerCase() === "!reloadchat" && (isBroadcaster || isMod)) {
         location.reload();
@@ -221,7 +221,7 @@
     },
 
     scheduleKickReconnect: function (chatroomId) {
-      if (Chat.info.kickManualClose) return;
+      if (Chat.info.kickManualClose || Chat.info.preview || !Chat.isPlatformEnabled("kick")) return;
 
       Chat.clearKickReconnectTimer();
 
@@ -245,34 +245,16 @@
       );
 
       Chat.info.kickReconnectTimer = setTimeout(function () {
+        if (!Chat.isPlatformEnabled("kick") || Chat.info.preview) return;
         Chat.connectKick(chatroomId, true);
       }, delay);
     },
 
-    normalizeKickChannel: function (channel) {
-      if (channel === undefined || channel === null || channel === false) {
-        return null;
+    normalizeKickChannel: function (channel, literal) {
+      if (!literal && /^(true|1|yes|same|channel|twitch)$/i.test(String(channel || "").trim())) {
+        return window.jChatPlatformSettings.normalizeKickChannel(Chat.info.channel, true);
       }
-
-      var slug = String(channel).trim();
-
-      // Allow &kick=true / &kick=1 / &kick=same to mean "same as Twitch channel".
-      if (/^(true|1|yes|same|channel|twitch)$/i.test(slug)) {
-        slug = Chat.info.channel;
-      }
-
-      if (!slug) return null;
-
-      slug = slug
-        .replace(/^@+/, "")
-        .replace(/^https?:\/\/(www\.)?kick\.com\//i, "")
-        .replace(/^popout\//i, "")
-        .replace(/\/chat$/i, "")
-        .split(/[/?#]/)[0]
-        .trim()
-        .toLowerCase();
-
-      return slug || null;
+      return window.jChatPlatformSettings.normalizeKickChannel(channel, literal);
     },
 
     findKickChatroomId: function (payload) {
@@ -326,11 +308,11 @@
       return walk(payload, 0);
     },
 
-    resolveKickChatroomId: function (channel) {
-      var slug = Chat.normalizeKickChannel(channel);
+    resolveKickChatroomId: function (channel, literal) {
+      var slug = Chat.normalizeKickChannel(channel, literal);
       var deferred = $.Deferred();
 
-      if (!slug) {
+      if (!slug || Chat.info.preview || !Chat.isPlatformEnabled("kick")) {
         deferred.reject("Missing Kick channel slug.");
         return deferred.promise();
       }
@@ -344,8 +326,13 @@
       ];
 
       var errors = [];
+      var generation = Chat.info.startupGeneration;
+      function active() {
+        return generation === Chat.info.startupGeneration && !Chat.info.preview && Chat.isPlatformEnabled("kick");
+      }
 
       function tryEndpoint(index) {
+        if (!active()) { deferred.reject("Kick startup cancelled."); return; }
         if (index >= endpoints.length) {
           deferred.reject({
             slug: slug,
@@ -367,6 +354,7 @@
           timeout: 10000,
         })
           .done(function (res) {
+            if (!active()) { deferred.reject("Kick startup cancelled."); return; }
             var chatroomId = Chat.findKickChatroomId(res);
 
             if (chatroomId) {
@@ -390,6 +378,7 @@
             tryEndpoint(index + 1);
           })
           .fail(function (xhr, status, error) {
+            if (!active()) { deferred.reject("Kick startup cancelled."); return; }
             errors.push({
               url: url,
               status: status,
@@ -406,15 +395,18 @@
       return deferred.promise();
     },
 
-    connectKickChannel: function (channel) {
-      var slug = Chat.normalizeKickChannel(channel);
+    connectKickChannel: function (channel, literal) {
+      if (Chat.info.preview || !Chat.isPlatformEnabled("kick") || Chat.info.kickChannelStarted) return;
+      var slug = Chat.normalizeKickChannel(channel, literal);
 
       if (!slug) {
         console.warn("jChat Kick: Missing Kick channel slug.");
         return;
       }
 
-      Chat.resolveKickChatroomId(slug)
+      Chat.info.kickChannelStarted = true;
+
+      Chat.resolveKickChatroomId(slug, true)
         .done(function (chatroomId) {
           Chat.connectKick(chatroomId);
         })
@@ -427,6 +419,7 @@
     },
 
     connectKick: function (chatroomId, isReconnect) {
+      if (Chat.info.preview || !Chat.isPlatformEnabled("kick")) return;
       if (!chatroomId || Number.isNaN(chatroomId)) {
         console.warn("jChat Kick: Missing or invalid kick_room parameter.");
         return;
@@ -440,21 +433,13 @@
 
       Chat.info.kickManualClose = false;
 
-      // Avoid duplicate Kick sockets if connectKick is called twice.
+      // An existing active socket already owns this startup.
       if (
         Chat.info.kickSocket &&
         (Chat.info.kickSocket.readyState === WebSocket.OPEN ||
           Chat.info.kickSocket.readyState === WebSocket.CONNECTING)
       ) {
-        Chat.info.kickManualClose = true;
-
-        try {
-          Chat.info.kickSocket.close();
-        } catch (err) {
-          console.warn("jChat Kick: Failed to close existing socket.", err);
-        }
-
-        Chat.info.kickManualClose = false;
+        return;
       }
 
       console.log(
@@ -466,6 +451,11 @@
 
       var socket = new WebSocket(Chat.info.kickPusherUrl);
       Chat.info.kickSocket = socket;
+      var generation = Chat.info.startupGeneration;
+      function active() {
+        return generation === Chat.info.startupGeneration &&
+          Chat.info.kickSocket === socket && !Chat.info.preview && Chat.isPlatformEnabled("kick");
+      }
 
       var subscribed = false;
       var channelName = "chatrooms." + chatroomId + ".v2";
@@ -490,10 +480,12 @@
       }
 
       socket.onopen = function () {
+        if (!active()) { socket.close(); return; }
         console.log("jChat Kick: WebSocket open");
       };
 
       socket.onmessage = function (event) {
+        if (!active()) return;
         var packet;
 
         try {
@@ -556,12 +548,13 @@
 
       socket.onclose = function (event) {
         subscribed = false;
+        var wasActive = active();
 
         if (Chat.info.kickSocket === socket) {
           Chat.info.kickSocket = null;
         }
 
-        if (Chat.info.kickManualClose) {
+        if (Chat.info.kickManualClose || !wasActive) {
           console.log("jChat Kick: WebSocket closed manually.");
           return;
         }

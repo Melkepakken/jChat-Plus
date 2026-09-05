@@ -15,6 +15,7 @@
         "user-id": options.userId || "preview-" + nick.toLowerCase(),
         bits: options.bits || "0",
         emotes: options.emotes || null,
+        gifs: options.gifs || null,
         mod: options.mod ? "1" : "0",
       },
       message: message,
@@ -79,6 +80,18 @@
   }
 
   var twitchMessages = [
+    // Native GIF payload from https://dev.twitch.tv/docs/chat/irc/#privmsg-tags.
+    // Keep the supplied range and complete media URL, including its query.
+    twitch(
+      "GifPreview",
+      "GifPreview",
+      "#26ff00",
+      "",
+      "[Y A Y Yes GIF by Djemilah Birnie]",
+      {
+        gifs: "0-33|joSNxeswxuc74Juo8X|https://media4.giphy.com/media/joSNxeswxuc74Juo8X/giphy.gif?cid=095d7a5dzizsiwgabonagkmigggv8v1spfai91ac3x0dsiy0&ep=v1_gifs_trending&rid=giphy.gif&ct=g",
+      },
+    ),
     // Core Twitch identity and badge coverage
     twitch(
       "Melkepakken",
