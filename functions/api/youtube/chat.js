@@ -1,9 +1,12 @@
+var YOUTUBE_CHAT_CONNECTOR_VERSION = "1";
+
 function jsonResponse(body, status) {
   return new Response(JSON.stringify(body), {
     status: status || 200,
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
+      "X-JChat-Chat-Version": YOUTUBE_CHAT_CONNECTOR_VERSION,
     },
   });
 }
@@ -12,6 +15,174 @@ var YOUTUBE_BOOTSTRAP_LOOKBACK_MS = 30 * 1000;
 var YOUTUBE_BOOTSTRAP_MAX_AGE_MS = 60 * 1000;
 var YOUTUBE_BOOTSTRAP_FUTURE_TOLERANCE_MS = 60 * 1000;
 var YOUTUBE_CHAT_REQUEST_TIMEOUT_MS = 15 * 1000;
+var YOUTUBE_WARNING_SUPPRESSION_MS = 60 * 1000;
+var YOUTUBE_MAX_WARNING_ENTRIES = 128;
+var youtubeWarningDeadlines = new Map();
+
+function shouldLogChatWarning(operation, videoId, warning) {
+  var now = Date.now();
+
+  youtubeWarningDeadlines.forEach(function (deadline, key) {
+    if (deadline <= now) {
+      youtubeWarningDeadlines.delete(key);
+    }
+  });
+
+  var validatedVideoId = typeof videoId === "string" &&
+    /^[a-zA-Z0-9_-]{11}$/.test(videoId) ? videoId : null;
+  var key = JSON.stringify([
+    operation,
+    validatedVideoId,
+    warning.stage,
+    warning.code || "poll_error",
+    warning.status,
+    warning.attempt || null,
+    warning.contentType || null,
+    Boolean(warning.html),
+    Boolean(warning.softBlock),
+    Boolean(warning.retryable),
+    Boolean(warning.timedOut),
+    warning.apiKeyFound,
+    warning.clientVersionFound,
+    warning.contextFound,
+  ]);
+
+  if (youtubeWarningDeadlines.get(key) > now) {
+    return false;
+  }
+
+  while (youtubeWarningDeadlines.size >= YOUTUBE_MAX_WARNING_ENTRIES) {
+    youtubeWarningDeadlines.delete(youtubeWarningDeadlines.keys().next().value);
+  }
+
+  // Suppressed repeats never extend the original warning's deadline.
+  youtubeWarningDeadlines.set(key, now + YOUTUBE_WARNING_SUPPRESSION_MS);
+  return true;
+}
+
+function readClientVersion(request) {
+  var value;
+
+  try {
+    value = request && request.headers &&
+      request.headers.get("X-JChat-Client-Version");
+  } catch (err) {
+    return null;
+  }
+
+  var version = typeof value === "string" ? value.trim() : "";
+
+  return version.length <= 32 &&
+    /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)
+    ? version
+    : null;
+}
+
+function diagnosticContentType(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  var mediaType = value.split(";", 1)[0].trim().toLowerCase();
+
+  return [
+    "application/json",
+    "application/xhtml+xml",
+    "application/octet-stream",
+    "text/html",
+    "text/plain",
+  ].indexOf(mediaType) !== -1
+    ? mediaType
+    : "other";
+}
+
+function diagnosticRetryAfter(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  var input = value.trim();
+
+  if (/^\d{1,10}$/.test(input)) {
+    return input;
+  }
+
+  if (
+    /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(input)
+  ) {
+    var timestamp = Date.parse(input);
+    return Number.isFinite(timestamp)
+      ? new Date(timestamp).toUTCString()
+      : null;
+  }
+
+  return null;
+}
+
+function logChatFailure(context, operation, videoId, details, error) {
+  var pollError = error && error.name === "YouTubePollError" ? error : null;
+  var pollStages = [
+    "fetch",
+    "timeout",
+    "read",
+    "http",
+    "content_type",
+    "parse",
+    "response_shape",
+    "continuation",
+  ];
+  var source = pollError || details;
+  var warning = {
+    operation: operation,
+    stage: pollError && pollStages.indexOf(pollError.stage) !== -1
+      ? pollError.stage
+      : details.stage,
+    code: pollError ? "poll_error" : details.code,
+    status: Number.isInteger(source.status) &&
+      source.status >= 100 && source.status <= 599
+      ? source.status
+      : null,
+    videoId: typeof videoId === "string" &&
+      /^[a-zA-Z0-9_-]{11}$/.test(videoId)
+      ? videoId
+      : null,
+    clientVersion: readClientVersion(context && context.request),
+    connectorVersion: YOUTUBE_CHAT_CONNECTOR_VERSION,
+  };
+
+  if (source.contentType) {
+    warning.contentType = diagnosticContentType(source.contentType);
+  }
+
+  if (typeof details.timedOut === "boolean" || pollError) {
+    warning.timedOut = pollError
+      ? pollError.stage === "timeout"
+      : details.timedOut;
+  }
+
+  if (pollError) {
+    warning.html = Boolean(pollError.html);
+    warning.softBlock = Boolean(pollError.softBlock);
+    warning.retryable = Boolean(pollError.retryable);
+  }
+
+  ["apiKeyFound", "clientVersionFound", "contextFound"].forEach(function (key) {
+    if (typeof details[key] === "boolean") {
+      warning[key] = details[key];
+    }
+  });
+
+  if (!shouldLogChatWarning(operation, warning.videoId, warning)) {
+    return;
+  }
+
+  console.warn(
+    operation === "bootstrap_get"
+      ? "[youtube-chat] Bootstrap failed"
+      : "[youtube-chat] Poll failed",
+    warning,
+  );
+}
 
 function createYouTubeRequestDeadline() {
   var controller = new AbortController();
@@ -710,7 +881,7 @@ function createPollError(message, details) {
   return error;
 }
 
-function logPollFailure(event, error, attempt, session, continuation) {
+function logPollFailure(event, error, attempt, session, continuation, operation) {
   var warning = {
     event: event,
     attempt: attempt,
@@ -718,11 +889,15 @@ function logPollFailure(event, error, attempt, session, continuation) {
       error && typeof error.status === "number" ? error.status : null,
     contentType:
       error && error.contentType
-        ? sanitizePollDiagnostic(error.contentType, session, continuation, 100)
+        ? diagnosticContentType(
+            sanitizePollDiagnostic(error.contentType, session, continuation, 100),
+          )
         : null,
     retryAfter:
       error && error.retryAfter
-        ? sanitizePollDiagnostic(error.retryAfter, session, continuation, 100)
+        ? diagnosticRetryAfter(
+            sanitizePollDiagnostic(error.retryAfter, session, continuation, 100),
+          )
         : null,
     html: Boolean(error && error.html),
     softBlock: Boolean(error && error.softBlock),
@@ -735,11 +910,9 @@ function logPollFailure(event, error, attempt, session, continuation) {
     stage: error && error.stage ? error.stage : "unknown",
   };
 
-  if (error && error.bodyPrefix) {
-    warning.bodyPrefix = error.bodyPrefix;
+  if (shouldLogChatWarning(operation, session.videoId, warning)) {
+    console.warn(warning);
   }
-
-  console.warn(warning);
 }
 
 async function fetchPollData(session, continuation, pollUrl, requestBody) {
@@ -865,7 +1038,7 @@ async function fetchPollData(session, continuation, pollUrl, requestBody) {
   }
 }
 
-async function fetchChatBatch(session, continuation) {
+async function fetchChatBatch(session, continuation, operation) {
   var pollUrl =
     "https://www.youtube.com/youtubei/v1/live_chat/get_live_chat" +
     "?prettyPrint=false&key=" +
@@ -892,16 +1065,10 @@ async function fetchChatBatch(session, continuation) {
         attempt,
         session,
         continuation,
+        operation,
       );
 
       if (!err || !err.retryable || attempt === 3) {
-        logPollFailure(
-          "youtube_chat_poll_failed",
-          err,
-          attempt,
-          session,
-          continuation,
-        );
         throw err;
       }
 
@@ -917,7 +1084,10 @@ async function fetchChatBatch(session, continuation) {
     pollData.continuationContents.liveChatContinuation;
 
   if (!liveChatContinuation) {
-    throw new Error("YouTube live-chat response was missing.");
+    throw createPollError("YouTube live-chat response was missing.", {
+      stage: "response_shape",
+      status: null,
+    });
   }
 
   var next = extractNextContinuation(liveChatContinuation.continuations);
@@ -927,7 +1097,10 @@ async function fetchChatBatch(session, continuation) {
   }
 
   if (!next.continuation) {
-    throw new Error("YouTube returned no recognized next continuation.");
+    throw createPollError("YouTube returned no recognized next continuation.", {
+      stage: "continuation",
+      status: null,
+    });
   }
 
   return {
@@ -957,6 +1130,11 @@ export async function onRequestGet(context) {
   var chatUrl =
     "https://www.youtube.com/live_chat?is_popout=1&hl=en&v=" +
     encodeURIComponent(videoId);
+  var diagnostic = {
+    stage: "chat_page_fetch",
+    code: "network_error",
+    status: null,
+  };
 
   try {
     var deadline = createYouTubeRequestDeadline();
@@ -969,7 +1147,13 @@ export async function onRequestGet(context) {
         signal: deadline.controller.signal,
       });
 
+      diagnostic.status = pageResponse.status;
+      diagnostic.contentType = pageResponse.headers.get("Content-Type");
+
       if (!pageResponse.ok) {
+        diagnostic.stage = "chat_page_http";
+        diagnostic.code = "http_error";
+        logChatFailure(context, "bootstrap_get", videoId, diagnostic);
         return jsonResponse(
           {
             error: "YouTube returned an unexpected chat-page response.",
@@ -978,16 +1162,44 @@ export async function onRequestGet(context) {
         );
       }
 
+      diagnostic.stage = "chat_page_read";
+      diagnostic.code = "body_read_error";
       html = await pageResponse.text();
+    } catch (err) {
+      diagnostic.timedOut = deadline.controller.signal.aborted;
+
+      if (diagnostic.timedOut) {
+        diagnostic.code = "request_timeout";
+      }
+
+      throw err;
     } finally {
       clearTimeout(deadline.timeout);
     }
 
+    diagnostic = {
+      stage: "initial_data",
+      code: "initial_data_missing",
+      status: pageResponse.status,
+    };
     var initialData = extractInitialData(html);
+
+    if (initialData) {
+      diagnostic.stage = "chat_filter";
+      diagnostic.code = "chat_filter_missing";
+    }
+
     var filterRenderer = findChatFilterRenderer(initialData);
+
+    if (filterRenderer) {
+      diagnostic.stage = "unfiltered_chat";
+      diagnostic.code = "unfiltered_chat_missing";
+    }
+
     var unfilteredChat = findUnfilteredChat(filterRenderer);
 
     if (!unfilteredChat) {
+      logChatFailure(context, "bootstrap_get", videoId, diagnostic);
       return jsonResponse(
         {
           error: "The unfiltered YouTube chat feed was not found.",
@@ -996,12 +1208,18 @@ export async function onRequestGet(context) {
       );
     }
 
+    diagnostic.stage = "innertube_config";
+    diagnostic.code = "config_incomplete";
     var apiKey = extractStringField(html, "INNERTUBE_API_KEY");
     var clientVersion = extractStringField(html, "INNERTUBE_CLIENT_VERSION");
     var clientName = extractNumberField(html, "INNERTUBE_CONTEXT_CLIENT_NAME");
     var innertubeContext = extractInnertubeContext(html);
 
     if (!apiKey || !clientVersion || !innertubeContext) {
+      diagnostic.apiKeyFound = Boolean(apiKey);
+      diagnostic.clientVersionFound = Boolean(clientVersion);
+      diagnostic.contextFound = Boolean(innertubeContext);
+      logChatFailure(context, "bootstrap_get", videoId, diagnostic);
       return jsonResponse(
         {
           error: "YouTube Innertube configuration was incomplete.",
@@ -1018,7 +1236,12 @@ export async function onRequestGet(context) {
       videoId: videoId,
     };
 
-    var firstBatch = await fetchChatBatch(session, unfilteredChat.continuation);
+    diagnostic = { stage: "initial_batch", code: "unexpected_error" };
+    var firstBatch = await fetchChatBatch(
+      session,
+      unfilteredChat.continuation,
+      "bootstrap_get",
+    );
 
     return jsonResponse({
       videoId: videoId,
@@ -1042,6 +1265,10 @@ export async function onRequestGet(context) {
   } catch (err) {
     var ended = err && err.code === "youtube_chat_ended";
 
+    if (!ended) {
+      logChatFailure(context, "bootstrap_get", videoId, diagnostic, err);
+    }
+
     return jsonResponse(
       {
         error: ended
@@ -1056,6 +1283,9 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
+  var diagnostic = { stage: "request_read", code: "unexpected_error" };
+  var diagnosticVideoId = null;
+
   try {
     var body = await context.request.json();
     var session = body && body.session;
@@ -1071,7 +1301,12 @@ export async function onRequestPost(context) {
       );
     }
 
-    var batch = await fetchChatBatch(session, continuation);
+    diagnosticVideoId = typeof session.videoId === "string" &&
+      /^[a-zA-Z0-9_-]{11}$/.test(session.videoId)
+      ? session.videoId
+      : null;
+    diagnostic = { stage: "poll_batch", code: "unexpected_error" };
+    var batch = await fetchChatBatch(session, continuation, "continuation_post");
 
     return jsonResponse({
       messages: batch.messages,
@@ -1082,6 +1317,16 @@ export async function onRequestPost(context) {
     });
   } catch (err) {
     var ended = err && err.code === "youtube_chat_ended";
+
+    if (!ended) {
+      logChatFailure(
+        context,
+        "continuation_post",
+        diagnosticVideoId,
+        diagnostic,
+        err,
+      );
+    }
 
     return jsonResponse(
       {
