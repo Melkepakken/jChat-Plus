@@ -59,9 +59,9 @@ jChat+ can find a Kick chatroom from its channel name, or use a manually supplie
 
 ### YouTube
 
-jChat+ can find a public live broadcast from a YouTube handle or channel URL. You can also connect directly with a video ID or URL, which is required for unlisted streams.
+jChat+ can find a public live broadcast from a YouTube handle or channel URL. You can also connect directly with a video ID or URL, which is required for unlisted streams and keeps initial priority.
 
-Automatic handle discovery backs off while a channel remains offline, from about one minute to several minutes between checks. A new public broadcast may therefore take a few minutes to appear, and can take longer when YouTube discovery or search is unavailable or quota-limited. This does not slow polling after Live Chat is connected. Direct `youtube_video` mode bypasses Data API discovery. If a daily discovery quota is exhausted, affected calls pause until the next Pacific-time reset and retry automatically.
+Automatic handle discovery backs off while a channel remains offline, from about one minute to several minutes between checks. A new public broadcast may therefore take a few minutes to appear, and can take longer when YouTube discovery or search is unavailable or quota-limited. This does not slow polling after Live Chat is connected. A direct-only `youtube_video` configuration bypasses Data API discovery. With a fallback `youtube` handle, repeated generic direct-chat failures may trigger a quota-safe check for a different current public live stream; an offline handle does not abandon the direct video. If a daily discovery quota is exhausted, affected calls pause until the next Pacific-time reset and retry automatically.
 
 Supported YouTube features include:
 
@@ -190,7 +190,7 @@ Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showin
 | `youtube`      | `youtube=false`       | Explicitly disable YouTube                             |
 | `preview`      | `preview=true`        | Enable preview mode                                   |
 
-`youtube_video` takes initial priority. If `youtube` is also present, jChat+ returns to public handle discovery after the direct stream ends.
+`youtube_video` takes initial priority. If `youtube` is also present, an explicit ended-chat response for the direct stream returns to public handle discovery.
 
 #### Appearance
 
