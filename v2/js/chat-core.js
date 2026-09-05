@@ -8,7 +8,11 @@
 
       if (param.length !== 2) continue;
 
-      params[param[0]] = decodeURIComponent(param[1].replace(/\+/g, " "));
+      try {
+        params[param[0]] = decodeURIComponent(param[1].replace(/\+/g, " "));
+      } catch (err) {
+        // Ignore malformed query values without preventing other sources starting.
+      }
     }
 
     return params;
@@ -29,6 +33,10 @@ Chat.getPlatformBadgeMode = function (value, provided) {
 $.extend(true, Chat, {
   info: {
     channel: null,
+    channelID: null,
+    platforms: null,
+    showGifs: false,
+    startupGeneration: 0,
     preview:
       "preview" in $.QueryString
         ? /^(1|true|yes)$/i.test($.QueryString.preview)
@@ -41,18 +49,8 @@ $.extend(true, Chat, {
     previewMaxDelay: 1200,
     previewBurstChance: 0.22,
     previewPauseChance: 0.07,
-    kickRoomId:
-      "kick_room" in $.QueryString &&
-      !Number.isNaN(parseInt($.QueryString.kick_room, 10))
-        ? parseInt($.QueryString.kick_room, 10)
-        : false,
-
-    kickChannel:
-      "kick" in $.QueryString
-        ? $.QueryString.kick
-        : "kick_channel" in $.QueryString
-          ? $.QueryString.kick_channel
-          : false,
+    kickRoomId: false,
+    kickChannel: false,
     kickPusherUrl:
       "wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false",
     kickSocket: null,
@@ -146,6 +144,32 @@ $.extend(true, Chat, {
         ? $.QueryString.block.toLowerCase().split(",")
         : false,
     bots: Array.isArray(window.jChatPlusBots) ? window.jChatPlusBots : [],
+  },
+
+  isPlatformEnabled: function (platform) {
+    var settings = Chat.info.platforms && Chat.info.platforms[platform];
+    return Boolean(settings && (Chat.info.preview ? settings.selected : settings.enabled));
+  },
+
+  applyPlatformSettings: function (query) {
+    var settings = window.jChatPlatformSettings.parse(query);
+    var previous = Chat.info.platforms;
+    if (!previous || ["twitch", "kick", "youtube"].some(function (platform) {
+      return JSON.stringify(previous[platform]) !== JSON.stringify(settings[platform]);
+    })) {
+      Chat.info.startupGeneration++;
+    }
+    Chat.info.platforms = settings;
+    Chat.info.channel = settings.twitch.channel;
+    Chat.info.kickChannel = settings.kick.channel || false;
+    Chat.info.kickRoomId = settings.kick.roomId || false;
+    // Feed resolved configuration into the existing YouTube state machine.
+    Chat.info.youtubeOption = window.jChatPlatformSettings.formatYouTubeHandle(settings.youtube.handle) || false;
+    Chat.info.youtubeDisabled = settings.youtube.disabled || !settings.youtube.enabled;
+    Chat.info.youtubeDirectVideoId = settings.youtube.videoId;
+    Chat.info.youtubeDirectVideoPending = Boolean(settings.youtube.videoId);
+    Chat.info.showGifs = settings.showGifs && Chat.isPlatformEnabled("twitch");
+    return settings;
   },
 
   normalizeBlockedUsers: function (value) {

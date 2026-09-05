@@ -148,6 +148,7 @@
 
     loadFfzUserBadgeData: function () {
       if (
+        !Chat.isPlatformEnabled("twitch") ||
         !Chat.info.ffzUserBadges ||
         Chat.info.hideBadges ||
         !Chat.shouldRenderNormalBadges()
@@ -206,6 +207,7 @@
 
     shouldLoadUserBadges: function (nick, userId) {
       if (
+        !Chat.isPlatformEnabled("twitch") ||
         !nick ||
         Chat.info.hideBadges ||
         !Chat.shouldRenderNormalBadges()
@@ -244,6 +246,7 @@
       var badges = Chat.info.userBadges[nick];
 
       if (
+        !Chat.isPlatformEnabled("twitch") ||
         Chat.info.hideBadges ||
         !Chat.shouldRenderNormalBadges() ||
         !Array.isArray(badges) ||
@@ -253,7 +256,7 @@
       }
 
       var $lines = $(".chat_line").filter(function () {
-        return $(this).attr("data-nick") === nick;
+        return $(this).attr("data-platform") === "twitch" && $(this).attr("data-nick") === nick;
       });
 
       $lines.each(function () {
@@ -283,6 +286,7 @@
 
     updateRenderedFfzUserBadges: function () {
       if (
+        !Chat.isPlatformEnabled("twitch") ||
         !Chat.info.ffzUserBadges ||
         Chat.info.hideBadges ||
         !Chat.shouldRenderNormalBadges()
@@ -294,6 +298,7 @@
 
       $(".chat_line").each(function () {
         var $line = $(this);
+        if ($line.attr("data-platform") !== "twitch") return;
         var userId = String($line.attr("data-user-id") || "");
         var badges = Chat.getFfzUserBadges(userId);
 
@@ -356,6 +361,7 @@
     },
 
     loadUserBadges: function (nick, userId) {
+      if (!Chat.isPlatformEnabled("twitch")) return $.Deferred().resolve().promise();
       if (!Array.isArray(Chat.info.userBadges[nick])) {
         Chat.info.userBadges[nick] = [];
       }

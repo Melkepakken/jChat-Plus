@@ -7,6 +7,8 @@
     youtube: 1,
   };
   var previewMessageBags = {};
+  var previewGeneration = 0;
+  var previewGifPending = false;
 
   function resetPreviewMessageBags() {
     previewMessageBags = {};
@@ -59,80 +61,18 @@
     return item;
   }
 
-  function getPreviewYouTubeEnabled(params) {
-    var youtubeValue = params.get("youtube");
-
-    if (
-      params.has("youtube") &&
-      /^(false|0|no|off|disabled)$/i.test(String(youtubeValue || "").trim())
-    ) {
-      return false;
-    }
-
-    if (
-      params.has("youtube_video") &&
-      String(params.get("youtube_video") || "").trim()
-    ) {
-      return true;
-    }
-
-    return params.has("youtube") && Boolean(String(youtubeValue || "").trim());
+  function hasPreviewPlatforms() {
+    return ["twitch", "kick", "youtube"].some(function (platform) {
+      return Chat.info.platforms[platform].selected;
+    });
   }
-
-  $.extend(Chat.info, {
-    previewYouTubeEnabled: getPreviewYouTubeEnabled(
-      new URLSearchParams(window.location.search),
-    ),
-  });
 
   $.extend(Chat, {
     isPreviewKickEnabled: function () {
-      if (Chat.info.kickRoomId) {
-        return true;
-      }
-
-      var kickChannel = Chat.info.kickChannel;
-
-      if (
-        kickChannel === false ||
-        kickChannel === null ||
-        kickChannel === undefined
-      ) {
-        return false;
-      }
-
-      kickChannel = String(kickChannel).trim();
-
-      return (
-        Boolean(kickChannel) &&
-        !/^(false|0|no|off|disabled)$/i.test(kickChannel)
-      );
+      return Chat.info.platforms.kick.selected;
     },
     isPreviewYouTubeEnabled: function () {
-      return Chat.info.previewYouTubeEnabled === true;
-    },
-
-    loadPreviewKickAssets: function (callback) {
-      if (!Chat.info.preview || !Chat.isPreviewKickEnabled()) {
-        if (callback) callback();
-        return;
-      }
-
-      if (Chat.info.kickRoomId) {
-        if (callback) callback();
-        return;
-      }
-
-      var slug = Chat.normalizeKickChannel(Chat.info.kickChannel);
-
-      if (!slug) {
-        if (callback) callback();
-        return;
-      }
-
-      Chat.resolveKickChatroomId(slug).always(function () {
-        if (callback) callback();
-      });
+      return Chat.info.platforms.youtube.selected;
     },
 
     previewMessages: window.jChatPlusPreviewMessages || [],
@@ -167,6 +107,9 @@
           return false;
         }
       } else {
+        if (!Chat.info.platforms.twitch.selected) {
+          return false;
+        }
         var displayName = item.info && item.info["display-name"];
 
         if (Chat.isUserBlocked(item.nick) || Chat.isUserBlocked(displayName)) {
@@ -214,6 +157,14 @@
     pickPreviewMessage: function () {
       if (!Chat.previewMessages || !Chat.previewMessages.length) {
         return null;
+      }
+
+      if (previewGifPending) {
+        previewGifPending = false;
+        var gifSample = Chat.previewMessages.find(function (item) {
+          return item.info && item.info.gifs && Chat.shouldShowPreviewMessage(item);
+        });
+        if (gifSample) return gifSample;
       }
 
       var platformPools = {};
@@ -286,10 +237,14 @@
 
     scheduleNextPreviewMessage: function (delay) {
       window.clearTimeout(Chat.info.previewTimer);
+      if (!hasPreviewPlatforms()) return;
+      var generation = previewGeneration;
 
       Chat.info.previewTimer = window.setTimeout(
         function () {
+          if (generation !== previewGeneration) return;
           Chat.writePreviewMessage(function () {
+            if (generation !== previewGeneration) return;
             Chat.cleanupRenderedLines();
             Chat.scheduleNextPreviewMessage();
           });
@@ -380,9 +335,13 @@
 
     seedPreviewMessages: function () {
       window.clearTimeout(Chat.info.previewSeedTimer);
+      if (!hasPreviewPlatforms()) return;
+      var generation = previewGeneration;
 
       Chat.info.previewSeedTimer = window.setTimeout(function () {
+        if (generation !== previewGeneration) return;
         Chat.writePreviewMessage(function () {
+          if (generation !== previewGeneration) return;
           Chat.cleanupRenderedLines();
           Chat.scheduleNextPreviewMessage();
         });
@@ -390,10 +349,12 @@
     },
 
     startPreview: function () {
+      previewGeneration++;
       resetPreviewMessageBags();
-      Chat.info.lines = [];
+      Chat.resetRenderedMessages();
+      Chat.info.previewIndex = 0;
       Chat.info.previewLastMessageKey = null;
-      $("#chat_container").empty();
+      previewGifPending = Chat.info.showGifs;
 
       window.clearTimeout(Chat.info.previewSeedTimer);
       window.clearTimeout(Chat.info.previewTimer);
@@ -403,6 +364,7 @@
 
     applyPreviewQuery: function (query) {
       var params = new URLSearchParams(query || "");
+      Chat.applyPlatformSettings(params);
 
       function truthy(name) {
         return params.has(name) && /^(1|true|yes)$/i.test(params.get(name));
@@ -440,22 +402,12 @@
 
       Chat.info.nicknameColor = params.get("cN") || false;
       Chat.info.seventvNamePaints = truthy("seventv_paints");
+      Chat.info.ffzRoomBadges = truthy("ffz_room_badges");
+      Chat.info.ffzUserBadges = truthy("ffz_user_badges");
       Chat.info.emojiStyle =
         params.has("emoji") && params.get("emoji").toLowerCase() === "native"
           ? "native"
           : "twemoji";
-      Chat.info.kickRoomId =
-        params.has("kick_room") &&
-        !Number.isNaN(parseInt(params.get("kick_room"), 10))
-          ? parseInt(params.get("kick_room"), 10)
-          : false;
-
-      Chat.info.kickChannel = params.has("kick")
-        ? params.get("kick")
-        : params.has("kick_channel")
-          ? params.get("kick_channel")
-          : false;
-      Chat.info.previewYouTubeEnabled = getPreviewYouTubeEnabled(params);
       Chat.info.blockedUsers = params.has("block")
         ? Chat.normalizeBlockedUsers(params.get("block"))
         : false;
@@ -463,17 +415,11 @@
       Chat.applyStaticStyles();
 
       if (Chat.info.preview) {
-        Chat.info.lines = [];
-        Chat.info.previewIndex = 0;
-        Chat.info.previewLastMessageKey = null;
-        $("#chat_container").empty();
-
-        window.clearTimeout(Chat.info.previewSeedTimer);
-        window.clearTimeout(Chat.info.previewTimer);
-
-        Chat.loadPreviewKickAssets(function () {
-          Chat.seedPreviewMessages();
-        });
+        Chat.startPreview();
+        Chat.loadSharedResources();
+        if (Chat.info.platforms.twitch.selected) {
+          Chat.loadTwitchGlobalResources();
+        }
       }
     },
   });

@@ -2,6 +2,9 @@
   window.Chat = window.Chat || {};
 
   Chat.twitchApi = function (path, data) {
+    if (!Chat.isPlatformEnabled("twitch")) {
+      return $.Deferred().reject("Twitch is disabled.").promise();
+    }
     var hasLocalTwitchCredentials =
       typeof TwitchAPI === "function" &&
       typeof client_id !== "undefined" &&

@@ -2,14 +2,36 @@
   window.Chat = window.Chat || {};
 
   $.extend(Chat, {
+    loadGlobalEmotes: function () {
+      if (Chat.info.globalEmotesStarted) return;
+      Chat.info.globalEmotesStarted = true;
+      Chat.loadEmotes();
+    },
+
     loadEmotes: function (channelID) {
-      Chat.info.emotes = {};
+      var channelResources = Boolean(channelID);
+      if (
+        channelResources &&
+        (!Chat.isPlatformEnabled("twitch") || Chat.info.preview)
+      ) return;
+      var generation = Chat.info.startupGeneration;
+      function active() {
+        return !channelResources || (
+          generation === Chat.info.startupGeneration &&
+          Chat.isPlatformEnabled("twitch")
+        );
+      }
+      // Keep native emotes already registered by other platforms.
+      var endpoints = channelResources
+        ? ["users/twitch/" + encodeURIComponent(channelID)]
+        : ["emotes/global"];
       // Load BTTV, FFZ and 7TV emotes
-      ["emotes/global", "users/twitch/" + encodeURIComponent(channelID)].forEach(
+      endpoints.forEach(
         (endpoint) => {
           $.getJSON(
             "https://api.betterttv.net/3/cached/frankerfacez/" + endpoint,
           ).done(function (res) {
+            if (!active() || !Array.isArray(res)) return;
             res.forEach((emote) => {
               if (emote.images["4x"]) {
                 var imageUrl = emote.images["4x"];
@@ -28,12 +50,13 @@
         },
       );
 
-      ["emotes/global", "users/twitch/" + encodeURIComponent(channelID)].forEach(
+      endpoints.forEach(
         (endpoint) => {
           $.getJSON("https://api.betterttv.net/3/cached/" + endpoint).done(
             function (res) {
+              if (!active() || !res) return;
               if (!Array.isArray(res)) {
-                res = res.channelEmotes.concat(res.sharedEmotes);
+                res = (res.channelEmotes || []).concat(res.sharedEmotes || []);
               }
               res.forEach((emote) => {
                 Chat.info.emotes[emote.code] = {
@@ -56,26 +79,36 @@
         },
       );
 
-      $.getJSON("https://7tv.io/v3/emote-sets/global").done(function (res) {
-        if (!res || !res.emotes) return;
+      if (!channelResources) {
+        $.getJSON("https://7tv.io/v3/emote-sets/global").done(function (res) {
+          if (!res || !res.emotes) return;
 
-        res.emotes.forEach((emote) => {
-          if (!emote.data || !emote.data.host || !emote.data.host.files) return;
+          res.emotes.forEach((emote) => {
+            if (
+              !emote.data || !emote.data.host ||
+              !emote.data.host.files || !emote.data.host.files.length
+            ) return;
 
-          var files = emote.data.host.files;
-          var file = files[files.length - 1];
+            var files = emote.data.host.files;
+            var file = files[files.length - 1];
 
-          Chat.info.emotes[emote.name] = {
-            id: emote.id,
-            image: "https:" + emote.data.host.url + "/" + file.name,
-            zeroWidth: emote.data.flags === 256,
-          };
+            Chat.info.emotes[emote.name] = {
+              id: emote.id,
+              image: "https:" + emote.data.host.url + "/" + file.name,
+              zeroWidth: emote.data.flags === 256,
+            };
+          });
         });
-      });
+        return;
+      }
 
       function processSevenTvChannelEmotes(emotes) {
+        if (!active()) return;
         emotes.forEach((emote) => {
-          if (!emote.data || !emote.data.host || !emote.data.host.files) return;
+          if (
+            !emote.data || !emote.data.host ||
+            !emote.data.host.files || !emote.data.host.files.length
+          ) return;
 
           var files = emote.data.host.files;
           var file = files[files.length - 1];
@@ -90,7 +123,7 @@
 
       $.getJSON("https://7tv.io/v3/users/twitch/" + encodeURIComponent(channelID))
         .done(function (res) {
-          if (!res) return;
+          if (!active() || !res) return;
 
           var emoteSetId = res.emote_set_id;
           if (emoteSetId) {

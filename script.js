@@ -16,24 +16,26 @@ function fadeOption() {
 }
 
 function kickOption() {
-  if ($kick_enabled.is(":checked")) {
-    $kick_channel_row.removeClass("hidden");
-  } else {
-    $kick_channel_row.addClass("hidden");
-    $kick_channel.val("");
-  }
+  const enabled = $kick_enabled.is(":checked");
+  $kick_channel_row.toggleClass("hidden", !enabled);
+  $kick_channel.prop("disabled", !enabled);
+  updatePlatformHints();
+}
+
+function twitchOption() {
+  const enabled = $twitch_enabled.is(":checked");
+  $twitch_controls.toggleClass("hidden", !enabled);
+  $twitch_controls.find("input").prop("disabled", !enabled);
+  updatePlatformHints();
 }
 
 function youtubeOption() {
   const rows = $youtube_channel_row.add($youtube_video_row);
 
-  if ($youtube_enabled.is(":checked")) {
-    rows.removeClass("hidden");
-  } else {
-    rows.addClass("hidden");
-    $youtube_channel.val("");
-    $youtube_video.val("");
-  }
+  const enabled = $youtube_enabled.is(":checked");
+  rows.toggleClass("hidden", !enabled);
+  $youtube_channel.add($youtube_video).prop("disabled", !enabled);
+  updatePlatformHints();
 }
 
 function advancedOption() {
@@ -56,59 +58,124 @@ function forceColorOption() {
   }
 }
 
-function getKickValue() {
-  if (!$kick_enabled.is(":checked")) {
-    return false;
-  }
+function getPlatformFields() {
+  const settings = window.jChatPlatformSettings;
+  const twitchEnabled = $twitch_enabled.is(":checked");
+  const kickEnabled = $kick_enabled.is(":checked");
+  const youtubeEnabled = $youtube_enabled.is(":checked");
+  const channel = twitchEnabled
+    ? settings.normalizeTwitchChannel($channel.val())
+    : null;
+  const kickFallback = settings.normalizeKickChannel(channel, true);
+  const kickInput = $kick_channel.val().trim();
+  const kickChannel = kickEnabled
+    ? (kickInput ? settings.normalizeKickChannel(kickInput) : kickFallback)
+    : null;
+  const youtubeKickFallback = settings.normalizeYouTubeHandle(kickChannel, true);
+  const youtubeTwitchFallback = settings.normalizeYouTubeHandle(channel, true);
+  const youtubeInput = $youtube_channel.val().trim();
+  const videoInput = $youtube_video.val().trim();
+  const youtubeHandle = youtubeEnabled
+    ? (youtubeInput
+        ? settings.normalizeYouTubeHandle(youtubeInput)
+        : videoInput ? null : youtubeKickFallback || youtubeTwitchFallback)
+    : null;
+  const youtubeVideo = youtubeEnabled
+    ? settings.getYouTubeVideoId(videoInput)
+    : null;
 
-  const kickChannel = $kick_channel.val().trim();
-
-  if (kickChannel) {
-    return kickChannel;
-  }
-
-  return "true";
+  return {
+    twitchEnabled,
+    kickEnabled,
+    youtubeEnabled,
+    channel,
+    kickFallback,
+    kickChannel,
+    youtubeFallbackPlatform: youtubeKickFallback ? "Kick" : youtubeTwitchFallback ? "Twitch" : null,
+    youtubeHandle,
+    youtubeVideo,
+  };
 }
 
-function getYouTubeValue() {
-  if (!$youtube_enabled.is(":checked")) {
-    return false;
-  }
-
-  const youtubeChannel = $youtube_channel.val().trim();
-
-  if (!youtubeChannel) {
-    return "true";
-  }
-
-  const normalizedChannel = youtubeChannel.replace(/^@+/, "");
-
-  return normalizedChannel || "true";
+function updatePlatformHints() {
+  const fields = getPlatformFields();
+  $kick_channel_help.text(
+    fields.kickFallback ? "Blank = same as Twitch channel" : "Enter a Kick channel",
+  );
+  $youtube_channel_help.text(
+    $youtube_video.val().trim()
+      ? "Optional fallback for future streams"
+      : fields.youtubeFallbackPlatform
+        ? "Blank = same as " + fields.youtubeFallbackPlatform + " channel"
+        : "Enter a handle or live video",
+  );
+  $preview_empty.toggleClass(
+    "hidden",
+    fields.twitchEnabled || fields.kickEnabled || fields.youtubeEnabled,
+  );
 }
 
-function getYouTubeVideoValue() {
-  if (!$youtube_enabled.is(":checked")) {
-    return false;
-  }
-
-  return $youtube_video.val().trim() || false;
+function clearFormErrors() {
+  $form_error.addClass("hidden").text("");
+  $generator.find("[aria-invalid]").removeAttr("aria-invalid");
 }
 
-function getOverlayChannel(options) {
-  const isPreview = options && options.preview;
-  const channel = $channel.val().trim();
+function validatePlatformFields() {
+  const fields = getPlatformFields();
+  const errors = [];
 
-  if (channel) {
-    return channel;
+  function invalid($input, message) {
+    $input.attr("aria-invalid", "true");
+    errors.push(message);
   }
 
-  return isPreview ? "twitch" : "";
+  clearFormErrors();
+  if (fields.twitchEnabled && !fields.channel) {
+    invalid($channel, "Enter a valid Twitch channel.");
+  }
+  if (fields.kickEnabled && !fields.kickChannel) {
+    invalid($kick_channel, "Enter a valid Kick channel.");
+  }
+  if (fields.youtubeEnabled) {
+    if ($youtube_channel.val().trim() && !fields.youtubeHandle) {
+      invalid($youtube_channel, "Enter a valid YouTube handle.");
+    }
+    if ($youtube_video.val().trim() && !fields.youtubeVideo) {
+      invalid($youtube_video, "Enter a valid YouTube video ID or URL.");
+    }
+    if (
+      !fields.youtubeHandle &&
+      !$youtube_channel.val().trim() &&
+      !$youtube_video.val().trim()
+    ) {
+      invalid($youtube_channel, "Enter a YouTube handle or live video.");
+    }
+  }
+  if (!fields.twitchEnabled && !fields.kickEnabled && !fields.youtubeEnabled) {
+    errors.push("Enable at least one platform.");
+  }
+
+  if (errors.length) {
+    $form_error.text(errors.join(" ")).removeClass("hidden");
+    $generator.find('[aria-invalid="true"]').first().trigger("focus");
+    return false;
+  }
+  return true;
 }
 
 function getOverlayData(options) {
   const isPreview = options && options.preview;
+  const fields = getPlatformFields();
+  const settings = window.jChatPlatformSettings;
 
   return {
+    // Preview selections carry no user identities and never validate sources online.
+    channel: isPreview ? false : fields.channel,
+    twitch: fields.twitchEnabled ? (isPreview ? "true" : false) : "false",
+    kick: isPreview ? String(fields.kickEnabled) : settings.formatKickChannel(fields.kickChannel),
+    youtube: isPreview ? String(fields.youtubeEnabled) : settings.formatYouTubeHandle(fields.youtubeHandle),
+    youtube_video: isPreview ? false : fields.youtubeVideo,
+    GIFs: fields.twitchEnabled && $show_gifs.is(":checked") ? "true" : false,
     size: $size.val(),
     font: $font.val(),
     stroke: $stroke.val() !== "0" ? $stroke.val() : false,
@@ -124,27 +191,18 @@ function getOverlayData(options) {
     animate: $animate.is(":checked"),
     fade: $fade_bool.is(":checked") ? $fade.val().trim() : false,
     small_caps: $small_caps.is(":checked"),
-    kick: getKickValue(),
-    youtube: getYouTubeValue(),
-    youtube_video: getYouTubeVideoValue(),
     emoji: $emoji.val() || false,
-    seventv_paints: $seventv_paints.is(":checked"),
+    seventv_paints: fields.twitchEnabled && $seventv_paints.is(":checked"),
     cN: $force_color_bool.is(":checked") ? $force_color.val() : false,
     block: $block.val().trim() || false,
-    ffz_room_badges: $ffz_room_badges.is(":checked"),
-    ffz_user_badges: $ffz_user_badges.is(":checked"),
+    ffz_room_badges: fields.twitchEnabled && $ffz_room_badges.is(":checked"),
+    ffz_user_badges: fields.twitchEnabled && $ffz_user_badges.is(":checked"),
     preview: isPreview ? "true" : false,
   };
 }
 
 function buildOverlayQuery(options) {
-  const channel = getOverlayChannel(options);
-  const data = getOverlayData(options);
-  const params = encodeQueryData(data);
-
-  return (
-    "channel=" + encodeURIComponent(channel) + (params ? "&" + params : "")
-  );
+  return encodeQueryData(getOverlayData(options));
 }
 
 function buildHostedOverlayUrl() {
@@ -188,10 +246,7 @@ function updateOverlayPreview(options) {
 function generateURL(event) {
   event.preventDefault();
 
-  const channel = $channel.val().trim();
-
-  if (!channel) {
-    showAlert("Enter a Twitch channel first");
+  if (!validatePlatformFields()) {
     return;
   }
 
@@ -259,6 +314,8 @@ function resetForm() {
   clearTimeout(generateButtonTimer);
 
   $channel.val("");
+  $twitch_enabled.prop("checked", true);
+  $show_gifs.prop("checked", false);
 
   $size.val("2");
   $font.val("0");
@@ -298,6 +355,7 @@ function resetForm() {
   $ffz_room_badges.prop("checked", false);
   $ffz_user_badges.prop("checked", false);
 
+  twitchOption();
   kickOption();
   youtubeOption();
   advancedOption();
@@ -314,6 +372,7 @@ function resetForm() {
   $url_status.text("URL generated. Click the field to copy it.");
   $submit.val("Generate URL");
 
+  clearFormErrors();
   hideAlert();
 
   updateOverlayPreview({ forceSrc: true });
@@ -324,6 +383,7 @@ function schedulePreviewUpdate() {
 }
 
 function markUrlStale() {
+  clearFormErrors();
   if (!$result.hasClass("hidden") && $url.val()) {
     $url_status.text("Settings changed. Generate again for a fresh URL.");
   }
@@ -331,6 +391,9 @@ function markUrlStale() {
 
 const $generator = $("form[name='generator']");
 const $channel = $('input[name="channel"]');
+const $twitch_enabled = $('input[name="twitch_enabled"]');
+const $twitch_controls = $("#twitch_controls");
+const $show_gifs = $('input[name="show_gifs"]');
 
 const $size = $("select[name='size']");
 const $font = $("select[name='font']");
@@ -350,12 +413,14 @@ const $all_badges = $("input[name='all_badges']");
 const $kick_enabled = $('input[name="kick_enabled"]');
 const $kick_channel = $('input[name="kick_channel"]');
 const $kick_channel_row = $("#kick_channel_row");
+const $kick_channel_help = $("#kick_channel_help");
 
 const $youtube_enabled = $('input[name="youtube_enabled"]');
 const $youtube_channel = $('input[name="youtube_channel"]');
 const $youtube_video = $('input[name="youtube_video"]');
 const $youtube_channel_row = $("#youtube_channel_row");
 const $youtube_video_row = $("#youtube_video_row");
+const $youtube_channel_help = $("#youtube_channel_help");
 
 const $animate = $('input[name="animate"]');
 const $fade_bool = $("input[name='fade_bool']");
@@ -378,6 +443,8 @@ const $advanced_ffz_user_row = $("#advanced_ffz_user_row");
 const $brightness = $("#brightness");
 const $preview_container = $("#preview_container");
 const $overlay_preview = $("#overlay_preview");
+const $preview_empty = $("#preview_empty");
+const $form_error = $("#form_error");
 const $result = $("#result");
 const $url = $("#url");
 const $url_status = $("#url_status");
@@ -387,6 +454,11 @@ const $submit = $("#generate_url");
 
 $fade_bool.change(function () {
   fadeOption();
+  schedulePreviewUpdate();
+});
+
+$twitch_enabled.change(function () {
+  twitchOption();
   schedulePreviewUpdate();
 });
 
@@ -426,7 +498,10 @@ $generator
     markUrlStale();
   });
 
-$url_only_inputs.on("input", markUrlStale);
+$url_only_inputs.on("input change", function () {
+  updatePlatformHints();
+  markUrlStale();
+});
 
 $overlay_preview.on("load", function () {
   previewFrameLoaded = true;
@@ -438,6 +513,7 @@ $brightness.click(changePreview);
 $url.click(copyUrl);
 $reset.click(resetForm);
 
+twitchOption();
 kickOption();
 youtubeOption();
 advancedOption();
