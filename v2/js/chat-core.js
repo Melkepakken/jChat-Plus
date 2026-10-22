@@ -52,8 +52,10 @@ $.extend(true, Chat, {
     previewPauseChance: 0.07,
     kickRoomId: false,
     kickChannel: false,
-    kickPusherUrl:
-      "wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false",
+    kickChannelId: null,
+    kickSession: null,
+    kickConnectionState: "idle",
+    kickLastError: null,
     kickSocket: null,
     kickReconnectTimer: null,
     kickReconnectAttempts: 0,
@@ -158,6 +160,9 @@ $.extend(true, Chat, {
     if (!previous || ["twitch", "kick", "youtube"].some(function (platform) {
       return JSON.stringify(previous[platform]) !== JSON.stringify(settings[platform]);
     })) {
+      if (previous && Chat.stopKick) Chat.stopKick();
+      Chat.info.kickChannelId = null;
+      Chat.info.kickChannelStarted = false;
       Chat.info.startupGeneration++;
     }
     Chat.info.platforms = settings;

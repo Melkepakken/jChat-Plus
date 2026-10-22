@@ -62,6 +62,8 @@ jChat+ can find a Kick chatroom from its channel name, or use a manually supplie
 
 **Known limitation:** Gift badge tiers are not fully mapped. jChat+ uses a default fallback gift badge unless Kick sends a direct image URL.
 
+Kick connections use the `/api/kick/realtime` Pages Function to discover Kick's current realtime provider. The overlay supports Centrifugo and Pusher and renews anonymous guest tokens automatically. Centrifugo traffic passes through `/api/kick/socket` because Kick rejects third-party browser origins; Pusher connects directly. The relay does not store or log chat messages. No Kick account login or API credentials are required. These are Kick website endpoints rather than its documented public API, so upstream changes can still affect compatibility.
+
 ### YouTube
 
 jChat+ can find a public live broadcast from a YouTube handle or channel URL. You can also connect directly with a video ID or URL, which is required for unlisted streams and keeps initial priority.
@@ -230,7 +232,7 @@ Normal users can use the hosted setup page. The instructions below are for runni
 
 ### Local server
 
-Twitch and Kick can be served as a static browser-based overlay. Run a simple static server:
+For Twitch-only use with local Twitch credentials, run a simple static server:
 
 ```bash
 python -m http.server 3000
@@ -244,7 +246,7 @@ http://localhost:3000/v2/?channel=yourtwitchchannel
 
 For OBS, add that URL as a **Browser Source**.
 
-YouTube uses Cloudflare Pages Functions. For local Wrangler use, create a `.dev.vars` file:
+Kick and YouTube use Cloudflare Pages Functions. For YouTube, create a `.dev.vars` file (Kick requires no secrets):
 
 ```txt
 YOUTUBE_API_KEY=your_key_here
@@ -259,10 +261,12 @@ npx wrangler pages dev .
 Then open:
 
 ```txt
-http://localhost:8788/v2/?channel=yourtwitchchannel&youtube=true
+http://localhost:8788/v2/?twitch=false&kick=yourkickchannel
 ```
 
-This does not introduce a build process. Wrangler is only the local Cloudflare Pages runtime. The Python static server remains enough for Twitch and Kick.
+This does not introduce a build process. Wrangler is the local Cloudflare Pages runtime. A plain static server cannot provide the Kick connection helper. To include YouTube, add `&youtube=YourYouTubeHandle` and configure the API key above.
+
+Kick connection diagnostics appear in the browser console with the `jChat Kick:` prefix. A missing-helper error means the Pages Function is not running. A confirmed subscription is logged only after the realtime server acknowledges it; transient failures retry with fresh connection discovery. Manual `kick_room` URLs also require the helper.
 
 ### Twitch credentials
 

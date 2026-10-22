@@ -4,6 +4,13 @@
 window.JCHAT_UPDATES = [
   {
     type: "update",
+    date: "2026-10-22",
+    title: "Kick chat connection update",
+    summary:
+      "Updated Kick chat support for the new Centrifugo connection system.",
+  },
+  {
+    type: "update",
     date: "2026-09-12",
     title: "7TV animation fix",
     summary:
