@@ -5,6 +5,13 @@ window.JCHAT_UPDATES = [
   {
     type: "update",
     date: "2026-10-22",
+    title: "YouTube daily limit fix",
+    summary:
+      "Fixed an issue where YouTube's daily limits could stop your chat from connecting later in the day.",
+  },
+  {
+    type: "update",
+    date: "2026-10-22",
     title: "Kick chat connection update",
     summary:
       "Updated Kick chat support for the new Centrifugo connection system.",

@@ -68,7 +68,7 @@ Kick connections use the `/api/kick/realtime` Pages Function to discover Kick's 
 
 jChat+ can find a public live broadcast from a YouTube handle or channel URL. You can also connect directly with a video ID or URL, which is required for unlisted streams and keeps initial priority.
 
-Automatic handle discovery backs off while a channel remains offline, from about one minute to several minutes between checks. A new public broadcast may therefore take a few minutes to appear, and can take longer when YouTube discovery or search is unavailable or quota-limited. This does not slow polling after Live Chat is connected. A direct-only `youtube_video` configuration bypasses Data API discovery. With a fallback `youtube` handle, repeated generic direct-chat failures may trigger a quota-safe check for a different current public live stream; an offline handle does not abandon the direct video. If a daily discovery quota is exhausted, affected calls pause until the next Pacific-time reset and retry automatically.
+Automatic handle discovery checks YouTube's public live listings. A confirmed offline channel waits about one minute to several minutes between checks and does not use the YouTube Data API. If the public listings cannot confirm a result, discovery falls back to the existing Data API checks. Videos already found are verified before searching again, and repeated failed searches wait progressively longer. A new public broadcast may take a few minutes to appear, or longer if both discovery methods are unavailable. This does not slow polling after Live Chat is connected. A direct-only `youtube_video` configuration bypasses handle discovery. With a fallback `youtube` handle, repeated generic direct-chat failures may trigger a check for a different current public live stream; an offline handle does not abandon the direct video. Daily Data API quota cooldowns do not stop regular public-listing checks.
 
 If automatic discovery reports a channel unavailable, jChat+ stops checking that handle until the overlay is reloaded; direct-video retries continue independently.
 
@@ -246,15 +246,16 @@ http://localhost:3000/v2/?channel=yourtwitchchannel
 
 For OBS, add that URL as a **Browser Source**.
 
-Kick and YouTube use Cloudflare Pages Functions. For YouTube, create a `.dev.vars` file (Kick requires no secrets):
+Kick and YouTube use Cloudflare Pages Functions. Normal YouTube discovery and chat reading require no secrets. To enable the YouTube Data API fallback, create a `.dev.vars` file:
 
 ```txt
 YOUTUBE_API_KEY=your_key_here
 ```
 
-Then run the local Pages runtime:
+Install the server dependency and run the local Pages runtime:
 
 ```bash
+npm ci
 npx wrangler pages dev .
 ```
 
@@ -264,7 +265,7 @@ Then open:
 http://localhost:8788/v2/?twitch=false&kick=yourkickchannel
 ```
 
-This does not introduce a build process. Wrangler is the local Cloudflare Pages runtime. A plain static server cannot provide the Kick connection helper. To include YouTube, add `&youtube=YourYouTubeHandle` and configure the API key above.
+Wrangler is the local Cloudflare Pages runtime and bundles the Functions' server dependency. The frontend still uses plain static files. A plain static server cannot provide the Kick or YouTube helpers. To include YouTube, add `&youtube=YourYouTubeHandle`.
 
 Kick connection diagnostics appear in the browser console with the `jChat Kick:` prefix. A missing-helper error means the Pages Function is not running. A confirmed subscription is logged only after the realtime server acknowledges it; transient failures retry with fresh connection discovery. Manual `kick_room` URLs also require the helper.
 
@@ -335,16 +336,16 @@ The Cloudflare Function proxies the Twitch Helix endpoints used by jChat+:
 
 The YouTube Functions handle separate parts of YouTube support:
 
-* `functions/api/youtube/live.js` uses the official YouTube Data API v3 to find the current live stream for a handle.
+* `functions/api/youtube/live.js` checks the channel's public live listings first. Confirmed offline results return immediately without Data API calls. Only failed or inconclusive lookups use the existing official YouTube Data API v3 fallback.
 * `functions/api/youtube/chat.js` uses the public web chat connector to read Live Chat messages, custom emoji, and deletion actions.
 
 jChat+ includes its client version on YouTube backend requests for diagnostics only; it is not used for authentication or runtime behavior.
 
 Discovery backoff and quota cooldowns use Cloudflare's Cache API. Its contents are local to the data center handling the request and may be evicted; concurrent work is coalesced only within the current Worker isolate. These safeguards reduce duplicate API calls, but they are not global coordination or an unlimited-scale guarantee.
 
-Live Chat reading does not require YouTube OAuth.
+Live Chat reading and public-listing discovery do not require YouTube OAuth or an API key. The Data API fallback remains available when public listings cannot confirm a result. Pages builds must install the root `package.json` dependencies before bundling the Functions; standard Pages Git builds do this automatically unless dependency installation is disabled.
 
-Required Cloudflare environment variables/secrets:
+Cloudflare environment variables/secrets for Twitch and the optional YouTube Data API fallback:
 
 ```txt
 TWITCH_CLIENT_ID
@@ -354,7 +355,7 @@ YOUTUBE_API_KEY
 
 `TWITCH_CLIENT_SECRET` and `YOUTUBE_API_KEY` must be saved as Cloudflare secrets.
 
-Enable YouTube Data API v3 in Google Cloud, create an API key, and restrict it to YouTube Data API v3. Save that key as `YOUTUBE_API_KEY` in Cloudflare.
+For the YouTube fallback, enable YouTube Data API v3 in Google Cloud, create an API key, and restrict it to YouTube Data API v3. Save that key as `YOUTUBE_API_KEY` in Cloudflare. Existing installations can keep their current key.
 
 The frontend should never expose either value.
 
@@ -394,7 +395,7 @@ Treat the `oauth_token` in `v2/credentials.js` as a credential, and never commit
 
 Hosted deployments should store `TWITCH_CLIENT_SECRET` and `YOUTUBE_API_KEY` as Cloudflare secrets instead of frontend credentials.
 
-Forks of this project do not receive the original Cloudflare secrets. Anyone deploying their own version must provide their own Twitch app credentials and YouTube Data API v3 key.
+Forks of this project do not receive the original Cloudflare secrets. Anyone deploying their own version must provide their own Twitch app credentials to use Twitch, and their own YouTube Data API v3 key to enable the YouTube discovery fallback.
 
 ---
 

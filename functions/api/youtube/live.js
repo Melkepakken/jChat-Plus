@@ -1,5 +1,7 @@
+import { discoverInnerTube } from "../../../lib/youtube-innertube.js";
+
 const YOUTUBE_API_ROOT = "https://www.googleapis.com/youtube/v3/";
-const YOUTUBE_RESOLVER_VERSION = "4";
+const YOUTUBE_RESOLVER_VERSION = "5";
 const YOUTUBE_API_TIMEOUT_MS = 15000;
 const MAX_UPLOADS = 50;
 const MAX_METADATA_BATCH_SIZE = 50;
@@ -14,6 +16,9 @@ const SEARCH_BACKOFF_MS = [
   12 * 60 * 60 * 1000,
   24 * 60 * 60 * 1000,
 ];
+const SEARCH_FAILURE_BACKOFF_MS = [1, 5, 15, 60, 360].map(
+  (minutes) => minutes * 60 * 1000,
+);
 const TEMPORARY_COOLDOWN_MS = 60 * 1000;
 const CONFIGURATION_COOLDOWN_MS = 5 * 60 * 1000;
 const PACIFIC_RESET_BUFFER_MS = 60 * 1000;
@@ -950,6 +955,37 @@ async function establishCooldown(
   return cooldown;
 }
 
+async function establishSearchFailureCooldown(context, channelId, error) {
+  const previous = await readCache(context, "searchTemporary", channelId);
+  const previousCount =
+    previous?._expiresAt > Date.now() &&
+    Number.isInteger(previous.failureCount) &&
+    previous.failureCount > 0
+      ? previous.failureCount
+      : 0;
+  const failureCount = Math.min(previousCount + 1, SEARCH_FAILURE_BACKOFF_MS.length);
+  const cooldown = {
+    code: "youtube_search_unavailable",
+    failureCount,
+    reason: safeLogToken(error.reason),
+    retryAt: Date.now() + SEARCH_FAILURE_BACKOFF_MS[failureCount - 1],
+    stage: safeLogToken(error.stage) || "search.list",
+    status: Number.isInteger(error.status) ? error.status : null,
+  };
+  await writeCache(context, "searchTemporary", channelId, cooldown, CACHE_TTL.searchState);
+  return cooldown;
+}
+
+async function resetSearchFailures(context, channelId) {
+  await writeCache(
+    context,
+    "searchTemporary",
+    channelId,
+    { failureCount: 0, retryAt: 0 },
+    CACHE_TTL.searchState,
+  );
+}
+
 function searchStateRecord(previous, overrides = {}) {
   const readValue = (key, fallback) =>
     Object.prototype.hasOwnProperty.call(overrides, key)
@@ -1080,7 +1116,7 @@ function cooldownMessage(code) {
   }
 
   if (code === "youtube_quota_exceeded") {
-    return "YouTube discovery is paused because its API quota is exhausted.";
+    return "YouTube API quota is exhausted. Public stream checks will retry automatically.";
   }
 
   if (code === "youtube_configuration_error") {
@@ -2061,14 +2097,6 @@ async function resolveFromUploads(
 }
 
 async function resolveLiveVideo(context, handle, apiKey) {
-  const unavailable = cachedCooldown(
-    await readCache(context, "unavailable", handle),
-  );
-
-  if (unavailable?.code === "youtube_channel_unavailable") {
-    throwCooldown(unavailable);
-  }
-
   const now = Date.now();
   const cached = cachedResolution(
     await readCache(context, "result", handle),
@@ -2088,6 +2116,46 @@ async function resolveLiveVideo(context, handle, apiKey) {
 
   if (scheduledOffline) {
     return scheduledOffline;
+  }
+
+  const discovery = await discoverInnerTube(handle);
+
+  if (discovery.state === "live") {
+    const result = await storeLiveResult(context, handle, discovery.videoId);
+    logResult(context, "innertube", result, {
+      channelId: discovery.channelId,
+      searchAttempted: false,
+    });
+    return result;
+  }
+
+  if (discovery.state === "offline") {
+    const result = await storeOfflineResult(context, handle);
+    await writeCache(
+      context,
+      "known-live",
+      handle,
+      { videoId: null },
+      CACHE_TTL.knownLive,
+    );
+    logResult(context, "innertube", result, {
+      channelId: discovery.channelId,
+      searchAttempted: false,
+    });
+    return result;
+  }
+
+  console.warn(
+    "[youtube-live] InnerTube unavailable; trying Data API fallback.",
+    diagnosticDetails(context, { reason: discovery.reason }),
+  );
+
+  const unavailable = cachedCooldown(
+    await readCache(context, "unavailable", handle),
+  );
+
+  if (unavailable?.code === "youtube_channel_unavailable") {
+    throwCooldown(unavailable);
   }
 
   const generalCooldown = await activeGeneralCooldown(context);
@@ -2111,18 +2179,17 @@ async function resolveLiveVideo(context, handle, apiKey) {
   const channel = await resolveChannel(context, handle, apiKey);
 
   const knownLive = await readCache(context, "known-live", handle);
-  const knownVideoId = isVideoId(knownLive?.videoId) ? knownLive.videoId : null;
+  const candidateIds = [...new Set([
+    discovery.candidateVideoId,
+    knownLive?.videoId,
+  ].filter(isVideoId))];
 
-  if (knownVideoId) {
-    const knownVideos = await videosById([knownVideoId], apiKey);
-    const knownVideo = knownVideos.find((video) => video.id === knownVideoId);
-    const knownSnapshot = knownVideo
-      ? videoSnapshots([knownVideoId], knownVideos, channel.channelId).get(
-          knownVideoId,
-        )
-      : null;
+  if (candidateIds.length) {
+    const videos = await videosById(candidateIds, apiKey);
+    const snapshots = videoSnapshots(candidateIds, videos, channel.channelId);
+    const liveVideoId = candidateIds.find((id) => snapshots.get(id)?.state === "live");
 
-    if (knownSnapshot?.state === "live") {
+    if (liveVideoId) {
       const previousSearchState = cachedSearchState(
         await readCache(context, "searchState", channel.channelId),
       );
@@ -2130,12 +2197,15 @@ async function resolveLiveVideo(context, handle, apiKey) {
         context,
         channel.channelId,
         (previousSearchState?.pendingCandidates || []).filter(
-          (entry) => entry.videoId !== knownVideoId,
+          (entry) => entry.videoId !== liveVideoId,
         ),
       );
-      const result = await storeLiveResult(context, handle, knownVideoId);
-      logResult(context, "known-live-cache", result, {
-        candidateVideoId: knownVideoId,
+      const result = await storeLiveResult(context, handle, liveVideoId);
+      const source = liveVideoId === discovery.candidateVideoId
+        ? "innertube-candidate"
+        : "known-live-cache";
+      logResult(context, source, result, {
+        candidateVideoId: liveVideoId,
         channelId: channel.channelId,
         liveCandidateFound: true,
         searchAttempted: false,
@@ -2143,22 +2213,19 @@ async function resolveLiveVideo(context, handle, apiKey) {
       return result;
     }
 
-    const ownershipIsKnown =
-      !knownVideo || knownVideo.snippet?.channelId === channel.channelId;
-    const metadataIsUncertain =
-      !knownVideo ||
-      !knownSnapshot ||
-      ["unknown", "upcoming"].includes(knownSnapshot.state);
+    const uncertainIds = candidateIds.filter((id) => {
+      const video = videos.find((entry) => entry.id === id);
+      const snapshot = snapshots.get(id);
+      return (!video || video.snippet?.channelId === channel.channelId) &&
+        (!snapshot || ["unknown", "upcoming"].includes(snapshot.state));
+    });
 
-    if (ownershipIsKnown && metadataIsUncertain) {
+    if (uncertainIds.length) {
       await retainSearchCandidatesForRetry(
         context,
         channel.channelId,
-        [knownVideoId],
+        uncertainIds,
       );
-      // Transfer uncertain metadata to bounded pending retries once. Leaving
-      // this ID in known-live would renew its search deadline on every check.
-      // Write an invalidation marker so a failed delete cannot resurrect it.
       await writeCache(
         context,
         "known-live",
@@ -2178,11 +2245,13 @@ async function resolveLiveVideo(context, handle, apiKey) {
           searchBackoffStage: null,
           searchSkippedReason: "known-live-uncertain",
         },
-        { skipSearchCandidateIds: [knownVideoId] },
+        { skipSearchCandidateIds: uncertainIds },
       );
     }
 
-    await removeSearchCandidate(context, channel.channelId, knownVideoId);
+    for (const id of candidateIds) {
+      await removeSearchCandidate(context, channel.channelId, id);
+    }
     await deleteCache(context, "known-live", handle);
   }
 
@@ -2337,13 +2406,7 @@ async function resolveLiveVideo(context, handle, apiKey) {
           stage: "search.list",
           status: error.status,
         })
-      : await establishCooldown(context, "searchTemporary", {
-          code: "youtube_search_unavailable",
-          reason: safeLogToken(error.reason),
-          retryAt: Date.now() + TEMPORARY_COOLDOWN_MS,
-          stage: safeLogToken(error.stage) || "search.list",
-          status: Number.isInteger(error.status) ? error.status : null,
-        }, channel.channelId);
+      : await establishSearchFailureCooldown(context, channel.channelId, error);
 
     logWarningOnce(
       context,
@@ -2380,6 +2443,8 @@ async function resolveLiveVideo(context, handle, apiKey) {
       },
     );
   }
+
+  await resetSearchFailures(context, channel.channelId);
 
   let searchVideos;
 
@@ -2606,7 +2671,7 @@ export async function onRequestGet(context) {
       result.live === false ? result.retryAfterMs : null,
     );
   } catch (error) {
-    const retryAfterMs = Math.max(
+    const cooldownDelay = Math.max(
       1000,
       Number(error?.retryAt || 0) - Date.now(),
     );
@@ -2614,6 +2679,9 @@ export async function onRequestGet(context) {
       typeof error?.code === "string"
         ? error.code
         : "youtube_upstream_unavailable";
+    const retryAfterMs = code === "youtube_quota_exceeded"
+      ? Math.min(cooldownDelay, TEMPORARY_COOLDOWN_MS)
+      : cooldownDelay;
     const message = cooldownMessage(code);
 
     return jsonResponse(

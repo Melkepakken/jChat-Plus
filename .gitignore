@@ -4,6 +4,7 @@ t/
 .vscode
 .wrangler/
 /tests/
+/node_modules/
 
 v2/credentials.js
 .dev.vars
