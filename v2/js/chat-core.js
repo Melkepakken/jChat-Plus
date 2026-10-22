@@ -28,7 +28,7 @@ Chat.getEmoteScale = function (value) {
     default: return 1;
   }
 };
-Chat.version = "1.3.1";
+Chat.version = "1.4.0";
 console.log("jChat+ v" + Chat.version);
 
 Chat.getPlatformBadgeMode = function (value, provided) {
