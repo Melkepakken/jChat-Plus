@@ -20,6 +20,14 @@
 })(jQuery);
 
 window.Chat = window.Chat || {};
+Chat.getEmoteScale = function (value) {
+  switch (String(value || "").trim().toLowerCase()) {
+    case "small": return 0.75;
+    case "large": return 1.5;
+    case "extra-large": return 2;
+    default: return 1;
+  }
+};
 Chat.version = "1.3.1";
 console.log("jChat+ v" + Chat.version);
 
@@ -102,6 +110,7 @@ $.extend(true, Chat, {
     ffzUserBadgeWarningShown: false,
     fade: "fade" in $.QueryString ? parseInt($.QueryString.fade) : false,
     size: "size" in $.QueryString ? parseInt($.QueryString.size) : 3,
+    emoteScale: Chat.getEmoteScale($.QueryString.emote_size),
     font: "font" in $.QueryString ? parseInt($.QueryString.font) : 0,
     stroke: "stroke" in $.QueryString ? parseInt($.QueryString.stroke) : false,
     shadow: "shadow" in $.QueryString ? parseInt($.QueryString.shadow) : false,

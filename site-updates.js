@@ -4,6 +4,13 @@
 window.JCHAT_UPDATES = [
   {
     type: "update",
+    date: "2026-10-23",
+    title: "Choose your emote size",
+    summary:
+      "Make emotes smaller or larger without changing your text size. Preview your choice and share it in your overlay link.",
+  },
+  {
+    type: "update",
     date: "2026-10-22",
     title: "YouTube daily limit fix",
     summary:

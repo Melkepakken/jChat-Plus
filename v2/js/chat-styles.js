@@ -7,6 +7,12 @@
 
       var rules = [];
 
+      if (Chat.info.emoteScale !== 1) {
+        rules.push(
+          "#chat_container { --jchat-emote-scale: " + Chat.info.emoteScale + "; }",
+        );
+      }
+
       function strokeShadows(value) {
         var stroke = Number(value);
 

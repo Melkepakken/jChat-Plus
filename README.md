@@ -208,11 +208,14 @@ Increase `v=1` to `v=2`, `v=3`, etc. after deploying changes if OBS keeps showin
 
 #### Emotes, badges, and cosmetics
 
+**Emote size** changes emotes and cheer images independently of text size. Choose Small, Medium, Large, or Extra Large. Medium keeps the original appearance, including for existing overlay links. Badges, ordinary emoji, and GIF sizes stay unchanged. The setting is included in your overlay link and shown in the live preview.
+
 | Parameter         | Example                | Description                         |
 | ----------------- | ---------------------- | ----------------------------------- |
 | `seventv_paints`  | `seventv_paints=true`  | Enable 7TV name paints              |
 | `GIFs`           | `GIFs=true`            | Display native Twitch chat GIFs (off by default) |
 | `gif_size`       | `gif_size=small`, `gif_size=medium`, `gif_size=large` | Twitch GIF size; Medium is the original size and default. Values ignore case and surrounding whitespace; invalid or empty values use Medium. |
+| `emote_size`      | `emote_size=large`     | Emote size: `small`, `medium` (default), `large`, or `extra-large` |
 | `emote_shadow`    | `emote_shadow=true`    | Add shadows to emotes, rendered emoji, cheers, and Twitch GIFs |
 | `platform_badges` | `platform_badges=true`  | Show Twitch, Kick, and YouTube platform badges (default when omitted) |
 | `platform_badges` | `platform_badges=false` | Hide platform badges only; other badges are unchanged |

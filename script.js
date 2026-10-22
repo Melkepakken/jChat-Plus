@@ -186,6 +186,7 @@ function getOverlayData(options) {
     GIFs: showGifs ? "true" : false,
     gif_size: showGifs ? settings.normalizeGifSize($gif_size.val()) : false,
     size: $size.val(),
+    emote_size: $emote_size.val() === "medium" ? false : $emote_size.val(),
     font: $font.val(),
     stroke: $stroke.val() !== "0" ? $stroke.val() : false,
     shadow: $shadow.val() !== "0" ? $shadow.val() : false,
@@ -328,6 +329,7 @@ function resetForm() {
   $gif_size.val("medium");
 
   $size.val("2");
+  $emote_size.val("medium");
   $font.val("0");
   $emoji.val("");
   $seventv_paints.prop("checked", false);
@@ -408,6 +410,7 @@ const $gif_size = $('select[name="gif_size"]');
 const $gif_size_row = $("#gif_size_row");
 
 const $size = $("select[name='size']");
+const $emote_size = $("#emote_size");
 const $font = $("select[name='font']");
 const $emoji = $("select[name='emoji']");
 const $seventv_paints = $('input[name="seventv_paints"]');

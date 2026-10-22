@@ -401,6 +401,7 @@
       Chat.info.size = params.has("size")
         ? parseInt(params.get("size"), 10)
         : 3;
+      Chat.info.emoteScale = Chat.getEmoteScale(params.get("emote_size"));
       Chat.info.font = params.has("font")
         ? parseInt(params.get("font"), 10)
         : 0;

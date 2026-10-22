@@ -28,18 +28,18 @@
 }
 
 .cheer_emote {
-    max-height: 42px;
+    max-height: calc(42px * var(--jchat-emote-scale, 1));
     margin-bottom: -10px;
 }
 
 .emote {
-    max-width: 128px;
-    max-height: 42px;
+    max-width: calc(128px * var(--jchat-emote-scale, 1));
+    max-height: calc(42px * var(--jchat-emote-scale, 1));
     margin-right: -3px;
 }
 
 .upscale {
-    height: 42px;
+    height: calc(42px * var(--jchat-emote-scale, 1));
 }
 
 .emoji {
