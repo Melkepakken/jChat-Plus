@@ -1,8 +1,0 @@
-{
-  "name": "jchat-plus",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "youtubei.js": "18.2.0"
-  }
-}

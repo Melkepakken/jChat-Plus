@@ -252,10 +252,9 @@ Kick and YouTube use Cloudflare Pages Functions. Normal YouTube discovery and ch
 YOUTUBE_API_KEY=your_key_here
 ```
 
-Install the server dependency and run the local Pages runtime:
+Run the local Pages runtime:
 
 ```bash
-npm ci
 npx wrangler pages dev .
 ```
 
@@ -265,7 +264,7 @@ Then open:
 http://localhost:8788/v2/?twitch=false&kick=yourkickchannel
 ```
 
-Wrangler is the local Cloudflare Pages runtime and bundles the Functions' server dependency. The frontend still uses plain static files. A plain static server cannot provide the Kick or YouTube helpers. To include YouTube, add `&youtube=YourYouTubeHandle`.
+Wrangler provides the local Cloudflare Pages runtime. No project dependencies or build step are needed. The frontend uses plain static files. A plain static server cannot provide the Kick or YouTube helpers. To include YouTube, add `&youtube=YourYouTubeHandle`.
 
 Kick connection diagnostics appear in the browser console with the `jChat Kick:` prefix. A missing-helper error means the Pages Function is not running. A confirmed subscription is logged only after the realtime server acknowledges it; transient failures retry with fresh connection discovery. Manual `kick_room` URLs also require the helper.
 
@@ -315,12 +314,25 @@ The response contains an `access_token`. Use that value as `oauth_token`.
 
 ### Cloudflare Pages deployment
 
+In the existing Pages project's **Settings > Build & deployments**, use:
+
+| Setting | Value |
+| --- | --- |
+| Framework preset | None |
+| Root directory | Repository root (leave blank) |
+| Build command | `exit 0` |
+| Build output directory | `/` (repository root) |
+
+Pages compiles the standard `functions/` directory automatically. There is no dependency installation, custom build command, or generated `_worker.js` to maintain. Only API routes invoke Functions; ordinary static assets stay on Pages' static asset service. Keep the existing secrets and compatibility settings; no new bindings are needed. Local compilation does not replace checking the next approved Git deployment.
+
 The public deployment uses:
 
 ```txt
 Cloudflare Pages
 chat.melkepakken.tv
 /functions/api/twitch/[[path]].js
+/functions/api/kick/realtime.js
+/functions/api/kick/socket.js
 /functions/api/youtube/live.js
 /functions/api/youtube/chat.js
 ```
@@ -336,14 +348,14 @@ The Cloudflare Function proxies the Twitch Helix endpoints used by jChat+:
 
 The YouTube Functions handle separate parts of YouTube support:
 
-* `functions/api/youtube/live.js` checks the channel's public live listings first. Confirmed offline results return immediately without Data API calls. Only failed or inconclusive lookups use the existing official YouTube Data API v3 fallback.
+* `functions/api/youtube/live.js` checks the channel's public live listings first. Confirmed offline channels, including channels with only scheduled broadcasts, return immediately without Data API calls. Only failed or inconclusive lookups use the existing official YouTube Data API v3 fallback.
 * `functions/api/youtube/chat.js` uses the public web chat connector to read Live Chat messages, custom emoji, and deletion actions.
 
 jChat+ includes its client version on YouTube backend requests for diagnostics only; it is not used for authentication or runtime behavior.
 
 Discovery backoff and quota cooldowns use Cloudflare's Cache API. Its contents are local to the data center handling the request and may be evicted; concurrent work is coalesced only within the current Worker isolate. These safeguards reduce duplicate API calls, but they are not global coordination or an unlimited-scale guarantee.
 
-Live Chat reading and public-listing discovery do not require YouTube OAuth or an API key. The Data API fallback remains available when public listings cannot confirm a result. Pages builds must install the root `package.json` dependencies before bundling the Functions; standard Pages Git builds do this automatically unless dependency installation is disabled.
+Live Chat reading and public-listing discovery do not require YouTube OAuth, an API key, or external libraries. The Data API fallback remains available when public listings cannot confirm a result.
 
 Cloudflare environment variables/secrets for Twitch and the optional YouTube Data API fallback:
 
