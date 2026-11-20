@@ -1,4 +1,5 @@
 import { discoverInnerTube } from "../../../lib/youtube-innertube.js";
+import { DAILY_QUOTA_REASONS, TEMPORARY_REASONS, TEMPORARY_COOLDOWN_MS, nextPacificQuotaReset } from "../../../lib/youtube-data-quota.js";
 
 const YOUTUBE_API_ROOT = "https://www.googleapis.com/youtube/v3/";
 const YOUTUBE_RESOLVER_VERSION = "5";
@@ -19,9 +20,7 @@ const SEARCH_BACKOFF_MS = [
 const SEARCH_FAILURE_BACKOFF_MS = [1, 5, 15, 60, 360].map(
   (minutes) => minutes * 60 * 1000,
 );
-const TEMPORARY_COOLDOWN_MS = 60 * 1000;
 const CONFIGURATION_COOLDOWN_MS = 5 * 60 * 1000;
-const PACIFIC_RESET_BUFFER_MS = 60 * 1000;
 // Keep verified ordinary upload metadata fresh for 30 minutes independently of
 // the uploads cache storage TTL. Candidate and unresolved entries are checked
 // on the cheap path.
@@ -39,11 +38,6 @@ const CACHE_TTL = {
   searchState: 7 * 24 * 60 * 60,
   searchClientCooldown: 30 * 60,
 };
-const DAILY_QUOTA_REASONS = new Set([
-  "quotaExceeded",
-  "dailyLimitExceeded",
-  "variableTermExpiredDailyExceeded",
-]);
 const CONFIGURATION_REASONS = new Set([
   "accessNotConfigured",
   "dailyLimitExceededUnreg",
@@ -52,12 +46,6 @@ const CONFIGURATION_REASONS = new Set([
   "keyInvalid",
   "rateLimitExceededUnreg",
   "userRateLimitExceededUnreg",
-]);
-const TEMPORARY_REASONS = new Set([
-  "concurrentLimitExceeded",
-  "rateLimitExceeded",
-  "servingLimitExceeded",
-  "userRateLimitExceeded",
 ]);
 const inFlightResolutions = new Map();
 const memoryCache = new Map();
@@ -295,82 +283,6 @@ function candidateVideoIds(items, getVideoId, stage) {
   }
 
   return videoIds;
-}
-
-function zonedDateParts(timestamp, timeZone) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-    minute: "2-digit",
-    month: "2-digit",
-    second: "2-digit",
-    timeZone,
-    year: "numeric",
-  }).formatToParts(new Date(timestamp));
-  const values = {};
-
-  for (const part of parts) {
-    if (part.type !== "literal") {
-      values[part.type] = Number(part.value);
-    }
-  }
-
-  return values;
-}
-
-function zonedTimeToUtc(parts, timeZone) {
-  const desired = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour || 0,
-    parts.minute || 0,
-    parts.second || 0,
-  );
-  let candidate = desired;
-
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const observed = zonedDateParts(candidate, timeZone);
-    const observedAsUtc = Date.UTC(
-      observed.year,
-      observed.month - 1,
-      observed.day,
-      observed.hour,
-      observed.minute,
-      observed.second,
-    );
-    const adjustment = desired - observedAsUtc;
-
-    candidate += adjustment;
-
-    if (adjustment === 0) {
-      break;
-    }
-  }
-
-  return candidate;
-}
-
-function nextPacificQuotaReset(now = Date.now()) {
-  const timeZone = "America/Los_Angeles";
-  const current = zonedDateParts(now, timeZone);
-  const nextDate = new Date(
-    Date.UTC(current.year, current.month - 1, current.day + 1),
-  );
-  const resetAt = zonedTimeToUtc(
-    {
-      day: nextDate.getUTCDate(),
-      hour: 0,
-      minute: 0,
-      month: nextDate.getUTCMonth() + 1,
-      second: 0,
-      year: nextDate.getUTCFullYear(),
-    },
-    timeZone,
-  );
-
-  return resetAt + PACIFIC_RESET_BUFFER_MS;
 }
 
 function isDailyQuotaError(error) {

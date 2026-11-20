@@ -6,7 +6,7 @@
   var YOUTUBE_CHAT_UNAVAILABLE_RETRY_DELAY_MS = 300000;
   var YOUTUBE_DISCOVERY_FAILURE_DELAYS = [15000, 30000, 60000, 120000, 300000];
   var YOUTUBE_BOOTSTRAP_RETRY_DELAYS = [5000, 15000];
-  var YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS = [
+  var YOUTUBE_RECOVERY_DELAYS = [
     5000,
     15000,
     30000,
@@ -16,17 +16,20 @@
   ];
   var YOUTUBE_DIRECT_PROBE_FAILURE_DELAYS = [60000, 120000, 300000];
   var YOUTUBE_DIRECT_SAME_VIDEO_PROBE_DELAY_MS = 300000;
+  var YOUTUBE_CHAT_ENDPOINT = "/api/youtube/chat";
+  var retryDeadlines = new Map();
+  var disabledChatVideos = new Set();
 
-  function validRetryDelay(value) {
+  function validRetryDelay(value, maxDelay) {
     return typeof value === "number" &&
       Number.isFinite(value) &&
       value >= 1000 &&
-      value <= YOUTUBE_MAX_TIMER_DELAY_MS
+      value <= (maxDelay || YOUTUBE_MAX_TIMER_DELAY_MS)
       ? Math.ceil(value)
       : null;
   }
 
-  function retryAfterHeaderDelay(value) {
+  function retryAfterHeaderDelay(value, maxDelay) {
     var input = String(value || "").trim();
 
     if (!input) {
@@ -34,19 +37,19 @@
     }
 
     if (/^\d+$/.test(input)) {
-      return validRetryDelay(Number(input) * 1000);
+      return validRetryDelay(Number(input) * 1000, maxDelay);
     }
 
     var retryAt = Date.parse(input);
 
     return Number.isFinite(retryAt)
-      ? validRetryDelay(retryAt - Date.now())
+      ? validRetryDelay(retryAt - Date.now(), maxDelay)
       : null;
   }
 
-  function responseRetryDelay(retryAfterMs, retryAfterHeader) {
-    var bodyDelay = validRetryDelay(retryAfterMs);
-    var headerDelay = retryAfterHeaderDelay(retryAfterHeader);
+  function responseRetryDelay(retryAfterMs, retryAfterHeader, maxDelay) {
+    var bodyDelay = validRetryDelay(retryAfterMs, maxDelay);
+    var headerDelay = retryAfterHeaderDelay(retryAfterHeader, maxDelay);
 
     if (bodyDelay === null) {
       return headerDelay;
@@ -57,6 +60,56 @@
     }
 
     return Math.max(bodyDelay, headerDelay);
+  }
+
+  function remainingRetryDelay(key) {
+    return Math.max(0, (retryDeadlines.get(key) || 0) - Date.now());
+  }
+
+  function rememberRetryDelay(deadlines, key, delay) {
+    if (delay > 0) deadlines.set(key, Math.max(deadlines.get(key) || 0, Date.now() + delay));
+  }
+
+  function requestChat(url, options) {
+    var deadlines = retryDeadlines;
+    return requestJson(url, options).catch(function (error) {
+      if (error.code !== "youtube_chat_unavailable" && error.code !== "youtube_chat_ended") {
+        var delay = responseRetryDelay(error.retryAfterMs, error.retryAfter, Number.MAX_SAFE_INTEGER) ||
+          (error.status === 429 ? 30000 : 0);
+        rememberRetryDelay(deadlines, YOUTUBE_CHAT_ENDPOINT, delay);
+      }
+      throw error;
+    });
+  }
+
+  function requestDiscovery(handle, controller) {
+    var deadlines = retryDeadlines;
+    var key = handle.toLowerCase();
+    return requestJson("/api/youtube/live?handle=" + encodeURIComponent(handle), null, controller)
+      .then(validatedDiscoveryResponse)
+      .then(function (discovery) {
+        rememberRetryDelay(deadlines, key, discovery.retryAfterMs);
+        return discovery;
+      })
+      .catch(function (error) {
+        var delay = responseRetryDelay(error.retryAfterMs, error.retryAfter, Number.MAX_SAFE_INTEGER);
+        rememberRetryDelay(deadlines, key, delay);
+        throw error;
+      });
+  }
+
+  function setYouTubeTimer(field, callback, delay) {
+    clearTimeout(Chat.info[field]);
+    var remaining = getPollDelay(delay);
+    function arm() {
+      var step = Math.min(remaining, YOUTUBE_MAX_TIMER_DELAY_MS);
+      remaining -= step;
+      Chat.info[field] = setTimeout(remaining > 0 ? arm : function () {
+        Chat.info[field] = null;
+        callback();
+      }, step);
+    }
+    arm();
   }
 
   function attachRetryAfterHeader(data, retryAfterHeader) {
@@ -143,6 +196,7 @@
           error.status = response.status;
           error.code =
             data && typeof data.code !== "undefined" ? data.code : null;
+          error.reason = data && data.reason;
           error.retryAfterMs =
             data && typeof data.retryAfterMs !== "undefined"
               ? data.retryAfterMs
@@ -341,6 +395,23 @@
     );
   }
 
+  function skipDisabledChat(videoId, source) {
+    if (!disabledChatVideos.has(videoId)) {
+      disabledChatVideos.add(videoId);
+      console.warn("jChat YouTube: Chat is disabled for video " + videoId +
+        ". Skipping this video until you reload the overlay.");
+    }
+    Chat.info.youtubeFailedHandleBootstrap = null;
+    Chat.resetYouTubeConnection();
+    Chat.info.youtubeActiveSource = null;
+    if (source === "video") {
+      Chat.info.youtubeDirectVideoPending = false;
+      Chat.connectYouTube();
+    } else {
+      Chat.scheduleYouTubeResolve(YOUTUBE_CHAT_UNAVAILABLE_RETRY_DELAY_MS);
+    }
+  }
+
   function validatedDiscoveryResponse(data) {
     function invalidResponse() {
       var error = new Error("YouTube discovery returned an invalid response.");
@@ -363,6 +434,7 @@
         retryAfterMs: responseRetryDelay(
           data.retryAfterMs,
           data._youtubeRetryAfter,
+          Number.MAX_SAFE_INTEGER,
         ),
       };
     }
@@ -377,42 +449,34 @@
     invalidResponse();
   }
 
-  function nextDiscoveryFailureDelay(error) {
+  function nextDiscoveryFailureDelay(handle) {
     var failureIndex = Math.min(
       Chat.info.youtubeDiscoveryFailureCount,
       YOUTUBE_DISCOVERY_FAILURE_DELAYS.length - 1,
     );
     var fallbackDelay = YOUTUBE_DISCOVERY_FAILURE_DELAYS[failureIndex];
-    var serverDelay = responseRetryDelay(
-      error && error.retryAfterMs,
-      error && error.retryAfter,
-    );
 
     Chat.info.youtubeDiscoveryFailureCount = Math.min(
       Chat.info.youtubeDiscoveryFailureCount + 1,
       YOUTUBE_DISCOVERY_FAILURE_DELAYS.length,
     );
 
-    return serverDelay === null ? fallbackDelay : serverDelay;
+    return remainingRetryDelay(handle.toLowerCase()) || fallbackDelay;
   }
 
-  function nextDirectProbeFailureDelay(error) {
+  function nextDirectProbeFailureDelay(handle) {
     var failureIndex = Math.min(
       Chat.info.youtubeDirectProbeFailureCount,
       YOUTUBE_DIRECT_PROBE_FAILURE_DELAYS.length - 1,
     );
     var fallbackDelay = YOUTUBE_DIRECT_PROBE_FAILURE_DELAYS[failureIndex];
-    var serverDelay = responseRetryDelay(
-      error && error.retryAfterMs,
-      error && error.retryAfter,
-    );
 
     Chat.info.youtubeDirectProbeFailureCount = Math.min(
       Chat.info.youtubeDirectProbeFailureCount + 1,
       YOUTUBE_DIRECT_PROBE_FAILURE_DELAYS.length,
     );
 
-    return serverDelay === null ? fallbackDelay : serverDelay;
+    return remainingRetryDelay(handle.toLowerCase()) || fallbackDelay;
   }
 
   function isCurrentDirectRecovery(recoveryGeneration, videoId, handle) {
@@ -462,6 +526,8 @@
     youtubePollFailureCount: 0,
     youtubeDiscoveryFailureCount: 0,
     youtubeBootstrapFailureCount: 0,
+    youtubeFailedHandleBootstrap: null,
+    youtubeEndedVideoId: null,
     youtubeDirectProbeAllowedAt: 0,
     youtubeDirectProbeFailureCount: 0,
     youtubeDirectProbeInFlight: false,
@@ -777,6 +843,12 @@
         return;
       }
 
+      var remaining = directVideoId ? 0 : remainingRetryDelay(handle.toLowerCase());
+      if (remaining > 0) {
+        Chat.scheduleYouTubeResolve(remaining);
+        return;
+      }
+
       if (Chat.info.youtubeResolveTimer) {
         clearTimeout(Chat.info.youtubeResolveTimer);
         Chat.info.youtubeResolveTimer = null;
@@ -802,8 +874,8 @@
 
       console.log("jChat YouTube: Resolving @" + handle);
 
-      requestJson("/api/youtube/live?handle=" + encodeURIComponent(handle))
-        .then(function (liveData) {
+      requestDiscovery(handle)
+        .then(function (discovery) {
           if (
             connectionGeneration !== Chat.info.youtubeConnectionGeneration
           ) {
@@ -811,8 +883,6 @@
           }
 
           Chat.info.youtubeResolving = false;
-          var discovery = validatedDiscoveryResponse(liveData);
-
           Chat.info.youtubeDiscoveryFailureCount = 0;
 
           if (!discovery.live) {
@@ -823,9 +893,18 @@
             return;
           }
 
+          if (discovery.videoId === Chat.info.youtubeEndedVideoId) {
+            Chat.scheduleYouTubeResolve(Chat.info.youtubeDiscoveryDelay);
+            return;
+          }
+          var failed = Chat.info.youtubeFailedHandleBootstrap;
+          var sameVideo = failed && failed.videoId === discovery.videoId;
+          if (sameVideo && failed.retryAt > Date.now()) {
+            Chat.scheduleYouTubeResolve(Math.min(failed.retryAt - Date.now(), Chat.info.youtubeDiscoveryDelay));
+            return;
+          }
           Chat.info.youtubeVideoId = discovery.videoId;
-
-          Chat.bootstrapYouTubeChat(discovery.videoId, "handle");
+          Chat.bootstrapYouTubeChat(discovery.videoId, "handle", sameVideo ? failed.attempt : 0);
         })
         .catch(function (err) {
           if (
@@ -843,7 +922,7 @@
             return;
           }
 
-          var retryDelay = nextDiscoveryFailureDelay(err);
+          var retryDelay = nextDiscoveryFailureDelay(handle);
 
           console.warn(
             "jChat YouTube: Live broadcast lookup failed, retrying",
@@ -864,14 +943,7 @@
         return;
       }
 
-      if (Chat.info.youtubeResolveTimer) {
-        clearTimeout(Chat.info.youtubeResolveTimer);
-      }
-
-      Chat.info.youtubeResolveTimer = setTimeout(function () {
-        Chat.info.youtubeResolveTimer = null;
-        Chat.connectYouTube();
-      }, getPollDelay(delay));
+      setYouTubeTimer("youtubeResolveTimer", Chat.connectYouTube, delay);
     },
 
     scheduleYouTubeBootstrap: function (
@@ -879,6 +951,7 @@
       source,
       retryAttempt,
       delay,
+      probeAtRetry,
     ) {
       var normalizedVideoId = getYouTubeVideoId(videoId);
 
@@ -890,15 +963,9 @@
         return;
       }
 
-      if (Chat.info.youtubeResolveTimer) {
-        clearTimeout(Chat.info.youtubeResolveTimer);
-      }
-
       var connectionGeneration = Chat.info.youtubeConnectionGeneration;
 
-      Chat.info.youtubeResolveTimer = setTimeout(function () {
-        Chat.info.youtubeResolveTimer = null;
-
+      setYouTubeTimer("youtubeResolveTimer", function () {
         if (
           connectionGeneration !== Chat.info.youtubeConnectionGeneration ||
           Chat.info.preview ||
@@ -911,7 +978,8 @@
         }
 
         Chat.bootstrapYouTubeChat(normalizedVideoId, source, retryAttempt);
-      }, getPollDelay(delay));
+        if (probeAtRetry) Chat.probeYouTubeFallback(normalizedVideoId);
+      }, delay);
     },
 
     clearYouTubeDirectRecovery: function () {
@@ -937,6 +1005,7 @@
         !Chat.info.youtubeDirectVideoPending ||
         Chat.info.youtubeDirectVideoId !== normalizedVideoId ||
         Chat.info.youtubeDirectProbeInFlight ||
+        remainingRetryDelay(handle.toLowerCase()) > 0 ||
         Date.now() < Chat.info.youtubeDirectProbeAllowedAt
       ) {
         return;
@@ -952,12 +1021,8 @@
           handle,
       );
 
-      requestJson(
-        "/api/youtube/live?handle=" + encodeURIComponent(handle),
-        null,
-        probeController,
-      )
-        .then(function (liveData) {
+      requestDiscovery(handle, probeController)
+        .then(function (discovery) {
           if (
             !isCurrentDirectRecovery(
               recoveryGeneration,
@@ -968,11 +1033,10 @@
             return;
           }
 
-          var discovery = validatedDiscoveryResponse(liveData);
           Chat.info.youtubeDirectProbeInFlight = false;
           Chat.info.youtubeDirectProbeController = null;
 
-          if (discovery.live && discovery.videoId !== normalizedVideoId) {
+          if (discovery.live && discovery.videoId !== normalizedVideoId && !disabledChatVideos.has(discovery.videoId)) {
             console.log(
               "jChat YouTube: Fallback handle found a different live video; switching",
             );
@@ -990,7 +1054,7 @@
               Date.now() + YOUTUBE_DIRECT_SAME_VIDEO_PROBE_DELAY_MS;
 
             console.log(
-              "jChat YouTube: Fallback handle points to the same video; keeping direct video",
+              "jChat YouTube: Fallback handle has no other usable chat; keeping direct video",
             );
             return;
           }
@@ -998,7 +1062,7 @@
           var retryDelay = discovery.retryAfterMs;
 
           if (retryDelay === null) {
-            retryDelay = nextDirectProbeFailureDelay(null);
+            retryDelay = nextDirectProbeFailureDelay(handle);
           }
 
           Chat.info.youtubeDirectProbeAllowedAt = Date.now() + retryDelay;
@@ -1027,7 +1091,7 @@
             return;
           }
 
-          var retryDelay = nextDirectProbeFailureDelay(err);
+          var retryDelay = nextDirectProbeFailureDelay(handle);
           Chat.info.youtubeDirectProbeAllowedAt = Date.now() + retryDelay;
 
           console.warn(
@@ -1044,6 +1108,10 @@
           : 0;
       var activeSource =
         source || Chat.info.youtubeActiveSource || "video";
+      if (disabledChatVideos.has(videoId)) {
+        skipDisabledChat(videoId, activeSource);
+        return;
+      }
       var preserveDirectRecovery =
         activeSource === "video" &&
         Chat.info.youtubeDirectVideoPending &&
@@ -1056,13 +1124,25 @@
 
       Chat.info.youtubeActiveSource = activeSource;
 
-      return requestJson(
-        "/api/youtube/chat?video=" + encodeURIComponent(videoId),
+      var remaining = remainingRetryDelay(YOUTUBE_CHAT_ENDPOINT);
+      if (remaining > 0) {
+        Chat.scheduleYouTubeBootstrap(videoId, activeSource, bootstrapAttempt, remaining);
+        return;
+      }
+
+      return requestChat(
+        YOUTUBE_CHAT_ENDPOINT + "?video=" + encodeURIComponent(videoId),
+        { headers: { "X-JChat-Accept-Chat-State": "disabled" } },
       )
         .then(function (chatData) {
           if (
             connectionGeneration !== Chat.info.youtubeConnectionGeneration
           ) {
+            return;
+          }
+
+          if (chatData && chatData.chatState === "disabled" && chatData.videoId === videoId) {
+            skipDisabledChat(videoId, activeSource);
             return;
           }
 
@@ -1112,6 +1192,7 @@
 
           Chat.info.youtubePollFailureCount = 0;
           Chat.info.youtubeBootstrapFailureCount = 0;
+          Chat.info.youtubeFailedHandleBootstrap = null;
           Chat.info.youtubeConnectionLost = false;
 
           if (activeSource === "video") {
@@ -1140,6 +1221,10 @@
           }
 
           if (err && err.code === "youtube_chat_unavailable") {
+            if (err.reason === "chat_disabled") {
+              skipDisabledChat(videoId, activeSource);
+              return;
+            }
             var unavailableDelay = responseRetryDelay(
               err.retryAfterMs,
               err.retryAfter,
@@ -1167,17 +1252,18 @@
             return;
           }
 
+          var upstreamDelay = remainingRetryDelay(YOUTUBE_CHAT_ENDPOINT);
           if (activeSource === "video" && preserveDirectRecovery) {
             var directFailureIndex = Math.min(
               bootstrapAttempt,
-              YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS.length - 1,
+              YOUTUBE_RECOVERY_DELAYS.length - 1,
             );
             var nextAttempt = Math.min(
               bootstrapAttempt + 1,
-              YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS.length,
+              YOUTUBE_RECOVERY_DELAYS.length,
             );
             var retryDelay =
-              YOUTUBE_DIRECT_BOOTSTRAP_RETRY_DELAYS[directFailureIndex];
+              Math.max(upstreamDelay, YOUTUBE_RECOVERY_DELAYS[directFailureIndex]);
 
             console.warn(
               "jChat YouTube: Direct chat bootstrap failed; retrying same video",
@@ -1191,9 +1277,10 @@
               activeSource,
               nextAttempt,
               retryDelay,
+              nextAttempt >= 3 && upstreamDelay > 0,
             );
 
-            if (nextAttempt >= 3) {
+            if (nextAttempt >= 3 && !upstreamDelay) {
               Chat.probeYouTubeFallback(videoId);
             }
 
@@ -1206,7 +1293,7 @@
           ) {
             var nextAttempt = bootstrapAttempt + 1;
             var retryDelay =
-              YOUTUBE_BOOTSTRAP_RETRY_DELAYS[bootstrapAttempt];
+              Math.max(upstreamDelay, YOUTUBE_BOOTSTRAP_RETRY_DELAYS[bootstrapAttempt]);
 
             console.warn(
               "jChat YouTube: Could not start live chat, retrying the same video",
@@ -1229,20 +1316,25 @@
             err,
           );
 
+          var resolveDelay = Chat.info.youtubeReconnectDelay;
+          if (activeSource === "handle") {
+            if (bootstrapAttempt > YOUTUBE_BOOTSTRAP_RETRY_DELAYS.length) {
+              resolveDelay = YOUTUBE_RECOVERY_DELAYS[bootstrapAttempt - 1];
+            }
+            Chat.info.youtubeFailedHandleBootstrap = {
+              videoId: videoId,
+              attempt: Math.min(bootstrapAttempt + 1, YOUTUBE_RECOVERY_DELAYS.length),
+              retryAt: Date.now() + resolveDelay,
+            };
+            resolveDelay = Math.min(resolveDelay, Chat.info.youtubeDiscoveryDelay);
+          }
           Chat.resetYouTubeConnection();
-          Chat.scheduleYouTubeResolve(Chat.info.youtubeReconnectDelay);
+          Chat.scheduleYouTubeResolve(Math.max(upstreamDelay, resolveDelay));
         });
     },
 
     scheduleYouTubePoll: function (delay) {
-      if (Chat.info.youtubePollTimer) {
-        clearTimeout(Chat.info.youtubePollTimer);
-      }
-
-      Chat.info.youtubePollTimer = setTimeout(function () {
-        Chat.info.youtubePollTimer = null;
-        Chat.pollYouTubeChat();
-      }, getPollDelay(delay));
+      setYouTubeTimer("youtubePollTimer", Chat.pollYouTubeChat, delay);
     },
 
     pollYouTubeChat: function () {
@@ -1254,12 +1346,18 @@
         return;
       }
 
+      var remaining = remainingRetryDelay(YOUTUBE_CHAT_ENDPOINT);
+      if (remaining > 0) {
+        Chat.scheduleYouTubePoll(remaining);
+        return;
+      }
+
       Chat.info.youtubePolling = true;
       var connectionGeneration = Chat.info.youtubeConnectionGeneration;
       var session = Chat.info.youtubeSession;
       var continuation = Chat.info.youtubeContinuation;
 
-      requestJson("/api/youtube/chat", {
+      requestChat(YOUTUBE_CHAT_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1328,6 +1426,7 @@
           }
 
           Chat.info.youtubeConnectionLost = true;
+          var upstreamDelay = remainingRetryDelay(YOUTUBE_CHAT_ENDPOINT);
           Chat.info.youtubePollFailureCount++;
 
           if (Chat.info.youtubePollFailureCount >= 2) {
@@ -1339,22 +1438,25 @@
               err,
             );
 
-            if (videoId) {
+            if (videoId && upstreamDelay) {
+              Chat.resetYouTubeConnection(source === "video");
+              Chat.scheduleYouTubeBootstrap(videoId, source, 0, upstreamDelay);
+            } else if (videoId) {
               Chat.bootstrapYouTubeChat(videoId, source);
             } else {
               Chat.resetYouTubeConnection();
-              Chat.scheduleYouTubeResolve(Chat.info.youtubeReconnectDelay);
+              Chat.scheduleYouTubeResolve(Math.max(upstreamDelay, Chat.info.youtubeReconnectDelay));
             }
 
             return;
           }
 
           console.warn(
-            "jChat YouTube: Poll failed, retrying in 5 seconds",
+            "jChat YouTube: Poll failed, retrying",
             err,
           );
 
-          Chat.scheduleYouTubePoll(Chat.info.youtubeReconnectDelay);
+          Chat.scheduleYouTubePoll(Math.max(upstreamDelay, Chat.info.youtubeReconnectDelay));
         });
     },
 
@@ -1416,6 +1518,8 @@
 
     handleYouTubeChatEnded: function () {
       var endedSource = Chat.info.youtubeActiveSource;
+      Chat.info.youtubeEndedVideoId = Chat.info.youtubeVideoId;
+      Chat.info.youtubeFailedHandleBootstrap = null;
 
       console.log("jChat YouTube: Live chat ended");
 
@@ -1571,6 +1675,9 @@
     },
 
     stopYouTubePolling: function () {
+      retryDeadlines = new Map();
+      Chat.info.youtubeEndedVideoId = null;
+      Chat.info.youtubeFailedHandleBootstrap = null;
       if (Chat.info.youtubeResolveTimer) {
         clearTimeout(Chat.info.youtubeResolveTimer);
       }

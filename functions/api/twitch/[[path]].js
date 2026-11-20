@@ -1,5 +1,6 @@
 let cachedToken = null;
-let tokenExpiresAt = 0;
+let pendingToken = null;
+const TWITCH_REQUEST_TIMEOUT_MS = 10000;
 
 const ALLOWED_PATHS = new Set([
   "users",
@@ -8,34 +9,50 @@ const ALLOWED_PATHS = new Set([
   "bits/cheermotes",
 ]);
 
-function jsonResponse(body, status) {
+function jsonResponse(body, status, headers) {
   return new Response(JSON.stringify(body), {
     status: status || 200,
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
+      ...headers,
     },
   });
 }
 
-async function getTwitchAppToken(env) {
-  const now = Date.now();
-
-  if (cachedToken && tokenExpiresAt > now + 60000) {
-    return cachedToken;
+async function fetchTwitch(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TWITCH_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const rateHeaders = {};
+    for (const name of ["Retry-After", "Ratelimit-Limit", "Ratelimit-Remaining", "Ratelimit-Reset"]) {
+      const value = response.headers.get(name);
+      if (value !== null) rateHeaders[name] = value;
+    }
+    return {
+      status: response.status, ok: response.ok, rateHeaders,
+      contentType: response.headers.get("Content-Type") || "application/json",
+      body: await response.text(),
+    };
+  } catch (err) {
+    const timedOut = controller.signal.aborted;
+    const error = new Error(timedOut ? "Twitch request timed out." : "Could not reach Twitch.");
+    error.status = timedOut ? 504 : 502;
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
+}
 
-  if (!env.TWITCH_CLIENT_ID || !env.TWITCH_CLIENT_SECRET) {
-    throw new Error("Missing TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET.");
-  }
-
+async function requestTwitchToken(env) {
   const body = new URLSearchParams({
     client_id: env.TWITCH_CLIENT_ID,
     client_secret: env.TWITCH_CLIENT_SECRET,
     grant_type: "client_credentials",
   });
 
-  const response = await fetch("https://id.twitch.tv/oauth2/token", {
+  const response = await fetchTwitch("https://id.twitch.tv/oauth2/token", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -44,16 +61,32 @@ async function getTwitchAppToken(env) {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error("Twitch token request failed: " + text);
+    const error = new Error("Twitch token request failed.");
+    error.status = response.status === 429 || response.status === 503 ? response.status : 502;
+    error.rateHeaders = response.rateHeaders;
+    throw error;
   }
 
-  const data = await response.json();
-
-  cachedToken = data.access_token;
-  tokenExpiresAt = now + Math.max(0, (data.expires_in - 300) * 1000);
-
+  const data = JSON.parse(response.body);
+  if (!data || typeof data.access_token !== "string" || !data.access_token.trim() ||
+      !Number.isFinite(data.expires_in) || data.expires_in <= 0) {
+    throw new Error("Twitch returned an invalid token.");
+  }
+  const ttl = data.expires_in * 1000;
+  cachedToken = {
+    value: data.access_token,
+    expiresAt: Date.now() + ttl - Math.min(360000, ttl / 10),
+  };
   return cachedToken;
+}
+
+function getTwitchAppToken(context) {
+  if (cachedToken && cachedToken.expiresAt > Date.now()) return cachedToken;
+  if (!pendingToken) {
+    pendingToken = requestTwitchToken(context.env).finally(() => { pendingToken = null; });
+    if (context.waitUntil) context.waitUntil(pendingToken.catch(() => {}));
+  }
+  return pendingToken;
 }
 
 function normalizePath(pathParam) {
@@ -79,9 +112,11 @@ export async function onRequestGet(context) {
     );
   }
 
-  try {
-    const token = await getTwitchAppToken(env);
+  if (!env.TWITCH_CLIENT_ID || !env.TWITCH_CLIENT_SECRET) {
+    return jsonResponse({ error: "Twitch proxy failed.", message: "Missing TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET." }, 500);
+  }
 
+  try {
     const incomingUrl = new URL(request.url);
     const twitchUrl = new URL("https://api.twitch.tv/helix/" + path);
 
@@ -89,30 +124,35 @@ export async function onRequestGet(context) {
       twitchUrl.searchParams.append(key, value);
     });
 
-    const twitchResponse = await fetch(twitchUrl.toString(), {
-      headers: {
-        Authorization: "Bearer " + token,
-        "Client-Id": env.TWITCH_CLIENT_ID,
-      },
-    });
+    let twitchResponse;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = await getTwitchAppToken(context);
+      twitchResponse = await fetchTwitch(twitchUrl.toString(), {
+        headers: {
+          Authorization: "Bearer " + token.value,
+          "Client-Id": env.TWITCH_CLIENT_ID,
+        },
+      });
+      if (twitchResponse.status !== 401) break;
+      if (cachedToken === token) cachedToken = null;
+    }
 
-    const text = await twitchResponse.text();
-
-    return new Response(text, {
+    return new Response(twitchResponse.body || null, {
       status: twitchResponse.status,
       headers: {
-        "Content-Type":
-          twitchResponse.headers.get("Content-Type") || "application/json",
-        "Cache-Control": "public, max-age=60",
+        "Content-Type": twitchResponse.contentType,
+        "Cache-Control": twitchResponse.ok ? "public, max-age=60" : "no-store",
+        ...twitchResponse.rateHeaders,
       },
     });
   } catch (err) {
     return jsonResponse(
       {
         error: "Twitch proxy failed.",
-        message: err && err.message ? err.message : String(err),
+        message: err instanceof SyntaxError ? "Twitch returned invalid token data." : err.message,
       },
-      500,
+      err.status || 502,
+      err.rateHeaders,
     );
   }
 }

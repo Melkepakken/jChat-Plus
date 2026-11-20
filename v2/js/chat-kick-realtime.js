@@ -16,6 +16,7 @@
     },
 
     stopKick: function () {
+      if (Chat.stopKickChannelLookup) Chat.stopKickChannelLookup();
       Chat.info.kickManualClose = true;
       Chat.clearKickReconnectTimer();
       var session = Chat.info.kickSession;

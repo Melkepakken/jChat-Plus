@@ -24,7 +24,7 @@
       if (Chat.info.ffzUserBadges && !Chat.info.hideBadges && Chat.shouldRenderNormalBadges()) {
         Chat.loadFfzUserBadgeData();
       }
-      if (!Chat.info.twitchGlobalResourcesLoaded) {
+      if (Chat.shouldRenderNormalBadges() && !Chat.info.twitchGlobalResourcesLoaded) {
         Chat.info.twitchGlobalResourcesLoaded = true;
         Chat.twitchApi("/chat/badges/global").done(function (res) { storeBadges(res, true); });
       }
@@ -66,9 +66,11 @@
         var channelID = res.data[0].id;
         Chat.info.channelID = channelID;
         Chat.loadEmotes(channelID);
-        Chat.twitchApi("/chat/badges", { broadcaster_id: channelID }).done(function (badges) {
-          if (active()) storeBadges(badges);
-        });
+        if (Chat.shouldRenderNormalBadges()) {
+          Chat.twitchApi("/chat/badges", { broadcaster_id: channelID }).done(function (badges) {
+            if (active()) storeBadges(badges);
+          });
+        }
 
         if (Chat.info.ffzRoomBadges) {
           $.getJSON("https://api.frankerfacez.com/v1/_room/id/" + encodeURIComponent(channelID))

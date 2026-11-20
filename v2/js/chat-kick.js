@@ -1,5 +1,6 @@
 (function () {
   window.Chat = window.Chat || {};
+  var channelLookup = null;
 
   $.extend(Chat, {
     isKickDeleteEvent: function (eventName) {
@@ -222,8 +223,8 @@
 
     findKickChatroomId: function (payload) {
       function toId(value) {
-        var id = parseInt(value, 10);
-        return Number.isNaN(id) ? null : id;
+        var id = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+        return Number.isSafeInteger(id) && id > 0 ? id : null;
       }
 
       function fromChatroomObject(obj) {
@@ -271,7 +272,7 @@
       return walk(payload, 0);
     },
 
-    resolveKickChatroomId: function (channel, literal) {
+    resolveKickChatroomId: function (channel, literal, lookup) {
       var slug = Chat.normalizeKickChannel(channel, literal);
       var deferred = $.Deferred();
 
@@ -291,7 +292,8 @@
       var errors = [];
       var generation = Chat.info.startupGeneration;
       function active() {
-        return generation === Chat.info.startupGeneration && !Chat.info.preview && Chat.isPlatformEnabled("kick");
+        return (!lookup || channelLookup === lookup) && generation === Chat.info.startupGeneration &&
+          !Chat.info.preview && Chat.isPlatformEnabled("kick");
       }
 
       function tryEndpoint(index) {
@@ -310,12 +312,14 @@
 
         console.log("jChat Kick: Resolving " + slug + " via " + url);
 
-        $.ajax({
+        var request = $.ajax({
           url: url,
           method: "GET",
           dataType: "json",
           timeout: 10000,
-        })
+        });
+        if (lookup) lookup.request = request;
+        request
           .done(function (res) {
             if (!active()) { deferred.reject("Kick startup cancelled."); return; }
             var chatroomId = Chat.findKickChatroomId(res);
@@ -343,13 +347,26 @@
           })
           .fail(function (xhr, status, error) {
             if (!active()) { deferred.reject("Kick startup cancelled."); return; }
+            var httpStatus = xhr && xhr.status;
+            var hint = xhr && xhr.getResponseHeader && xhr.getResponseHeader("Retry-After");
+            var retryAfter = /^\d{1,10}$/.test(hint) ? Number(hint) * 1000 :
+              (/ GMT$/.test(hint) ? Date.parse(hint) - Date.now() : 0);
             errors.push({
               url: url,
               status: status,
               error: error,
-              httpStatus: xhr && xhr.status,
+              httpStatus: httpStatus,
             });
 
+            if (httpStatus === 429 || retryAfter > 0) {
+              deferred.reject({
+                slug: slug,
+                message: "Could not resolve Kick chatroom ID.",
+                errors: errors,
+                retryAfterMs: retryAfter > 0 ? retryAfter : 30000,
+              });
+              return;
+            }
             tryEndpoint(index + 1);
           });
       }
@@ -357,6 +374,15 @@
       tryEndpoint(0);
 
       return deferred.promise();
+    },
+
+    stopKickChannelLookup: function () {
+      var lookup = channelLookup;
+      channelLookup = null;
+      Chat.info.kickChannelStarted = false;
+      if (!lookup) return;
+      clearTimeout(lookup.timer);
+      if (lookup.request && lookup.request.abort) lookup.request.abort();
     },
 
     connectKickChannel: function (channel, literal) {
@@ -369,17 +395,49 @@
       }
 
       Chat.info.kickChannelStarted = true;
+      var generation = Chat.info.startupGeneration;
+      var lookup = { delay: 5000, timer: null, request: null };
+      channelLookup = lookup;
 
-      Chat.resolveKickChatroomId(slug, true)
-        .done(function (chatroomId) {
-          Chat.connectKick(chatroomId);
-        })
-        .fail(function (err) {
-          console.warn(
-            "jChat Kick: Failed to auto-resolve channel. Use kick_room as fallback.",
-            err,
-          );
-        });
+      function active() {
+        return channelLookup === lookup && generation === Chat.info.startupGeneration &&
+          !Chat.info.preview && Chat.isPlatformEnabled("kick");
+      }
+
+      function retryIn(remaining) {
+        var step = Math.min(remaining, 2147483647);
+        lookup.timer = setTimeout(function () {
+          if (!active()) return;
+          if (remaining > step) retryIn(remaining - step);
+          else resolveChannel();
+        }, step);
+      }
+
+      function resolveChannel() {
+        if (!active()) return;
+        Chat.resolveKickChatroomId(slug, true, lookup)
+          .done(function (chatroomId) {
+            if (!active()) return;
+            channelLookup = null;
+            Chat.connectKick(chatroomId);
+          })
+          .fail(function (err) {
+            if (!active()) return;
+            if (!err.retryAfterMs && err.errors && err.errors.every(function (item) {
+              return item.httpStatus === 404 || item.httpStatus === 410;
+            })) {
+              channelLookup = null;
+              console.warn("jChat Kick: Channel not found. Check the channel name or use kick_room.");
+              return;
+            }
+            var delay = Math.max(lookup.delay + Math.floor(Math.random() * 1000), err.retryAfterMs || 0);
+            lookup.delay = Math.min(lookup.delay * 2, 300000);
+            lookup.request = null;
+            console.warn("jChat Kick: Channel lookup failed. Retrying in " + Math.ceil(delay / 1000) + "s.");
+            retryIn(delay);
+          });
+      }
+      resolveChannel();
     },
   });
 })();

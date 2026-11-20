@@ -4,6 +4,13 @@
 window.JCHAT_UPDATES = [
   {
     type: "update",
+    date: "2026-11-20",
+    title: "Chat connection fixes",
+    summary:
+      "Fixed issues loading Kick chat and Twitch badges. YouTube stops retrying ended streams and skips disabled chat until you reload the overlay.",
+  },
+  {
+    type: "update",
     date: "2026-10-23",
     title: "Choose your emote size",
     summary:
